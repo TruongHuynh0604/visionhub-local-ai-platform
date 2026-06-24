@@ -37,17 +37,28 @@ export async function DatasetsPage() {
           <button id="reconnectLocalFolderBtn" class="btn">Reconnect</button>
           <button id="clearLocalFolderBtn" class="btn danger">Forget folder</button>
         </div>
-        <div class="row">
-          <input id="newLocalProjectName" class="input" placeholder="New project name, e.g. Camera6_Top_Pin" style="max-width:320px">
-          <button id="createLocalProjectBtn" class="btn primary">Create local project</button>
+
+        <div class="card pad stack" style="box-shadow:none; border-style:dashed; background:#f8fbff">
+          <h3>1) Create / select AI project</h3>
+          <div class="row">
+            <input id="newLocalProjectName" class="input" placeholder="New project name, e.g. Camera6_Top_Pin" style="max-width:360px">
+            <button id="createLocalProjectBtn" class="btn primary">Create local project</button>
+          </div>
+          ${projectPickerHtml()}
         </div>
-        ${projectPickerHtml()}
-        <div class="row">
-          <button id="importImageFilesBtn" class="btn primary">Upload images to selected local project</button>
-          <button id="importImageFolderBtn" class="btn">Upload image folder</button>
-          <input id="localImageFilesInput" type="file" multiple accept="image/*,.jpg,.jpeg,.png,.bmp,.webp,.gif,.tif,.tiff" hidden>
-          <input id="localImageFolderInput" type="file" multiple webkitdirectory hidden>
+
+        <div class="card pad stack" style="box-shadow:none; border:2px solid #15318c; background:#f7faff">
+          <h3>2) Upload / import images to local project</h3>
+          <p class="muted">These buttons copy images from your PC into the active project folder only. Nothing is uploaded to Render/GitHub/server.</p>
+          <div class="row">
+            <button id="importImageFilesBtn" class="btn primary">Upload image files</button>
+            <button id="importImageFolderBtn" class="btn primary">Upload image folder</button>
+            <input id="localImageFilesInput" type="file" multiple accept="image/*,.jpg,.jpeg,.png,.bmp,.webp,.gif,.tif,.tiff" hidden>
+            <input id="localImageFolderInput" type="file" multiple webkitdirectory hidden>
+          </div>
+          <div class="code">Target: /projects/${escapeHtml(activeProjectId() || 'select-project')}/images</div>
         </div>
+
         <div id="localFolderStatus" class="code">${escapeHtml(localStatus || 'No local folder selected yet.')}</div>
         ${localClassesEditorHtml()}
       </section>
@@ -61,7 +72,7 @@ export async function DatasetsPage() {
 
     <section class="card pad" style="margin-top:16px">
       <h2>Local projects</h2>
-      <p class="muted">Delete removes the full local folder <b>/projects/&lt;project-id&gt;</b> from your PC. It does not touch GitHub or Render.</p>
+      <p class="muted">You can also import images from each project row. Delete removes the full local folder <b>/projects/&lt;project-id&gt;</b> from your PC. It does not touch GitHub or Render.</p>
       ${projectsTable()}
     </section>
   `;
@@ -124,7 +135,7 @@ async function loadLocalInfo(requestPermission = false) {
       `Folders created now: ${result.structure.created.length ? result.structure.created.join(', ') : 'none'}`,
       `Files created now: ${result.structure.filesCreated.length ? result.structure.filesCreated.join(', ') : 'none'}`,
       localImportStatus,
-      'Upload buttons copy images into the selected local project only: /projects/<project-id>/images.',
+      'Upload/import buttons copy images into the selected local project only: /projects/<project-id>/images.',
       'Detection labels are saved into /projects/<project-id>/labels/detection as YOLO .txt files.',
       'Delete project removes that project folder from your local PC workspace only.',
       'No images, labels, exports, logs or training data are uploaded to the server.',
@@ -144,7 +155,7 @@ function localCapabilityHtml() {
 }
 
 function projectPickerHtml() {
-  if (!localProjects.length) return '';
+  if (!localProjects.length) return `<div class="empty">No project yet. Enter a project name and click Create local project.</div>`;
   return `
     <div class="stack">
       <h3>Active local project</h3>
@@ -206,6 +217,8 @@ function projectsTable() {
       <td>${p.classes.map(escapeHtml).join(', ')}</td>
       <td class="row" style="gap:6px">
         <button class="btn small use-local-project" data-project-id="${escapeHtml(p.id)}">Use local</button>
+        <button class="btn small primary upload-project-files" data-project-id="${escapeHtml(p.id)}">Upload files</button>
+        <button class="btn small upload-project-folder" data-project-id="${escapeHtml(p.id)}">Upload folder</button>
         <a class="btn small" href="#/labeling">Label</a>
         <button class="btn small danger delete-local-project" data-project-id="${escapeHtml(p.id)}" data-project-name="${escapeHtml(p.name)}">Delete</button>
       </td>
@@ -219,6 +232,16 @@ async function ensureLocalReadyForImport() {
   if (!activeProjectId()) throw new Error('Create or select a local project first.');
 }
 
+async function openFilePickerForProject(projectId, inputId) {
+  setActiveLocalProjectId(projectId);
+  setProject(projectId);
+  await ensureLocalReadyForImport();
+  const input = document.getElementById(inputId);
+  if (!input) throw new Error(`Missing input: ${inputId}`);
+  input.value = '';
+  input.click();
+}
+
 async function handleImageImport(files, refresh) {
   const fileArray = Array.from(files || []);
   if (!fileArray.length) return;
@@ -227,7 +250,7 @@ async function handleImageImport(files, refresh) {
   const statusEl = document.getElementById('localFolderStatus');
   if (statusEl) statusEl.textContent = `Importing ${fileArray.length} file(s) into local project ${projectId}/images...`;
   const result = await importLocalImageFiles(state.localRootHandle, fileArray, projectId);
-  localImportStatus = `Last import into ${projectId}: ${result.imported} image(s) copied to /images, ${result.overwritten} overwritten, ${result.skipped} skipped.`;
+  localImportStatus = `Last import into ${projectId}: ${result.imported} image(s) copied to /projects/${projectId}/images, ${result.overwritten} overwritten, ${result.skipped} skipped.`;
   console.info('[local-fs] local image import complete', result);
   await refresh();
 }
@@ -324,10 +347,7 @@ export function bindDatasetsPage(refresh) {
 
   document.getElementById('importImageFilesBtn')?.addEventListener('click', async () => {
     try {
-      await ensureLocalReadyForImport();
-      const input = document.getElementById('localImageFilesInput');
-      input.value = '';
-      input.click();
+      await openFilePickerForProject(activeProjectId(), 'localImageFilesInput');
     } catch (err) {
       console.error('[local-fs] image import open failed', err);
       alert(err.message || err);
@@ -336,10 +356,7 @@ export function bindDatasetsPage(refresh) {
 
   document.getElementById('importImageFolderBtn')?.addEventListener('click', async () => {
     try {
-      await ensureLocalReadyForImport();
-      const input = document.getElementById('localImageFolderInput');
-      input.value = '';
-      input.click();
+      await openFilePickerForProject(activeProjectId(), 'localImageFolderInput');
     } catch (err) {
       console.error('[local-fs] image folder import open failed', err);
       alert(err.message || err);
@@ -388,6 +405,24 @@ export function bindDatasetsPage(refresh) {
     setProject(id);
     state.currentImageIndex = 0;
     await refresh();
+  }));
+
+  document.querySelectorAll('.upload-project-files').forEach(btn => btn.addEventListener('click', async () => {
+    try {
+      await openFilePickerForProject(btn.dataset.projectId, 'localImageFilesInput');
+    } catch (err) {
+      console.error('[local-fs] project image import open failed', err);
+      alert(err.message || err);
+    }
+  }));
+
+  document.querySelectorAll('.upload-project-folder').forEach(btn => btn.addEventListener('click', async () => {
+    try {
+      await openFilePickerForProject(btn.dataset.projectId, 'localImageFolderInput');
+    } catch (err) {
+      console.error('[local-fs] project image folder import open failed', err);
+      alert(err.message || err);
+    }
   }));
 
   document.querySelectorAll('.delete-local-project').forEach(btn => btn.addEventListener('click', async () => {
