@@ -1,7 +1,7 @@
 export const state = {
   route: location.hash.replace('#/', '') || 'home',
   projects: [],
-  selectedProjectId: 'local-fs',
+  selectedProjectId: localStorage.getItem('vh_local_active_project_id') || localStorage.getItem('vh_project_id') || 'default-project',
   classes: [],
   images: [],
   currentImageIndex: 0,
@@ -19,8 +19,9 @@ export function setRoute(route) {
 }
 
 export function setProject(projectId) {
-  state.selectedProjectId = projectId || 'local-fs';
+  state.selectedProjectId = projectId || 'default-project';
   localStorage.setItem('vh_project_id', state.selectedProjectId);
+  localStorage.setItem('vh_local_active_project_id', state.selectedProjectId);
 }
 
 export function setTask(task) {
