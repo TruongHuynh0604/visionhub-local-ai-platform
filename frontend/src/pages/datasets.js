@@ -6,6 +6,7 @@ import {
   chooseLocalRootFolder,
   clearSavedRootHandle,
   getLocalProjectSummary,
+  importLocalImageFiles,
   isFileSystemAccessSupported,
   reconnectLocalRootFolder,
   writeLocalClasses,
@@ -13,6 +14,7 @@ import {
 
 let localSummary = null;
 let localStatus = '';
+let localImportStatus = '';
 let localStructure = null;
 
 export async function DatasetsPage() {
@@ -31,6 +33,12 @@ export async function DatasetsPage() {
           <button id="reconnectLocalFolderBtn" class="btn">Reconnect</button>
           <button id="useLocalModeBtn" class="btn">Use for labeling</button>
           <button id="clearLocalFolderBtn" class="btn danger">Forget folder</button>
+        </div>
+        <div class="row">
+          <button id="importImageFilesBtn" class="btn primary">Upload images to local /images</button>
+          <button id="importImageFolderBtn" class="btn">Upload image folder</button>
+          <input id="localImageFilesInput" type="file" multiple accept="image/*,.jpg,.jpeg,.png,.bmp,.webp,.gif,.tif,.tiff" hidden>
+          <input id="localImageFolderInput" type="file" multiple webkitdirectory hidden>
         </div>
         <div id="localFolderStatus" class="code">${escapeHtml(localStatus || 'No local folder selected yet.')}</div>
         ${localClassesEditorHtml()}
@@ -91,9 +99,11 @@ async function loadLocalInfo(requestPermission = false) {
       `Classes: ${localSummary.classes.join(', ')}`,
       `Folders created now: ${result.structure.created.length ? result.structure.created.join(', ') : 'none'}`,
       `Files created now: ${result.structure.filesCreated.length ? result.structure.filesCreated.join(', ') : 'none'}`,
-      'Put images into /images. Detection labels are saved into /labels/detection as YOLO .txt files.',
+      localImportStatus,
+      'Use Upload images to local /images to copy images from any PC folder into the selected VisionHub local workspace.',
+      'Detection labels are saved into /labels/detection as YOLO .txt files.',
       'No images, labels, exports, logs or training data are uploaded to the server.',
-    ].join('\n');
+    ].filter(Boolean).join('\n');
   } catch (err) {
     localStatus = `Local folder check failed: ${err.message || err}`;
     state.localFsReady = false;
@@ -105,7 +115,7 @@ function localCapabilityHtml() {
   if (!isFileSystemAccessSupported()) {
     return `<div class="empty">This browser does not support local folder read/write. Use Chrome or Edge.</div>`;
   }
-  return `<div class="mode-banner"><strong>ACTIVE: Local PC storage only</strong><br>Folder: ${escapeHtml(state.localRootName || 'not selected')}<br><span class="muted">Server upload/project creation is disabled to avoid filling Render/GitHub storage.</span></div>`;
+  return `<div class="mode-banner"><strong>ACTIVE: Local PC storage only</strong><br>Folder: ${escapeHtml(state.localRootName || 'not selected')}<br><span class="muted">Server upload/project creation is disabled. The upload buttons below copy images into your selected local /images folder only.</span></div>`;
 }
 
 function requiredStructureHtml() {
@@ -145,6 +155,23 @@ function projectsTable() {
   </tbody></table>`;
 }
 
+async function ensureLocalReadyForImport() {
+  await loadLocalInfo(true);
+  if (!state.localRootHandle || !state.localFsReady) throw new Error('Select or reconnect a local folder first.');
+}
+
+async function handleImageImport(files, refresh) {
+  const fileArray = Array.from(files || []);
+  if (!fileArray.length) return;
+  await ensureLocalReadyForImport();
+  const statusEl = document.getElementById('localFolderStatus');
+  if (statusEl) statusEl.textContent = `Importing ${fileArray.length} file(s) into local /images...`;
+  const result = await importLocalImageFiles(state.localRootHandle, fileArray);
+  localImportStatus = `Last import: ${result.imported} image(s) copied to /images, ${result.overwritten} overwritten, ${result.skipped} skipped.`;
+  console.info('[local-fs] local image import complete', result);
+  await refresh();
+}
+
 export function bindDatasetsPage(refresh) {
   document.getElementById('chooseLocalFolderBtn')?.addEventListener('click', async () => {
     try {
@@ -181,9 +208,56 @@ export function bindDatasetsPage(refresh) {
     state.localRootHandle = null;
     state.localRootName = '';
     state.localFsReady = false;
+    localImportStatus = '';
     setStorageMode('local');
     setProject(LOCAL_PROJECT_ID);
     await refresh();
+  });
+
+  document.getElementById('importImageFilesBtn')?.addEventListener('click', async () => {
+    try {
+      await ensureLocalReadyForImport();
+      const input = document.getElementById('localImageFilesInput');
+      input.value = '';
+      input.click();
+    } catch (err) {
+      console.error('[local-fs] image import open failed', err);
+      alert(err.message || err);
+    }
+  });
+
+  document.getElementById('importImageFolderBtn')?.addEventListener('click', async () => {
+    try {
+      await ensureLocalReadyForImport();
+      const input = document.getElementById('localImageFolderInput');
+      input.value = '';
+      input.click();
+    } catch (err) {
+      console.error('[local-fs] image folder import open failed', err);
+      alert(err.message || err);
+    }
+  });
+
+  document.getElementById('localImageFilesInput')?.addEventListener('change', async (event) => {
+    try {
+      await handleImageImport(event.target.files, refresh);
+    } catch (err) {
+      console.error('[local-fs] image file import failed', err);
+      alert(err.message || err);
+    } finally {
+      event.target.value = '';
+    }
+  });
+
+  document.getElementById('localImageFolderInput')?.addEventListener('change', async (event) => {
+    try {
+      await handleImageImport(event.target.files, refresh);
+    } catch (err) {
+      console.error('[local-fs] image folder import failed', err);
+      alert(err.message || err);
+    } finally {
+      event.target.value = '';
+    }
   });
 
   document.getElementById('saveLocalClassesBtn')?.addEventListener('click', async () => {
