@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from .config import FRONTEND_DIR, DATA_DIR
-from .routers import datasets, annotations, training, models
+from .routers import datasets, annotations, training, models, debug
 
 app = FastAPI(title="VisionHub Local AI Platform", version="2.0.0")
 
@@ -20,6 +20,7 @@ app.include_router(datasets.router)
 app.include_router(annotations.router)
 app.include_router(training.router)
 app.include_router(models.router)
+app.include_router(debug.router)
 
 app.mount("/data", StaticFiles(directory=str(DATA_DIR)), name="data")
 app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
