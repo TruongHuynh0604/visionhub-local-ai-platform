@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from .config import FRONTEND_DIR, DATA_DIR
 from .routers import datasets, annotations, training, models, debug
 
-APP_VERSION = "2.1.0-local-multiproject"
+APP_VERSION = "2.2.0-local-training-agent"
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
