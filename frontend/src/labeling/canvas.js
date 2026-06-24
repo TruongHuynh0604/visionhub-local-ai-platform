@@ -31,6 +31,7 @@ export class LabelingCanvas {
     this.pan = { x: 0, y: 0 };
     this.showLabels = true;
     this.contextMenuEl = null;
+    LabelingCanvas.activeInstance = this;
     this.bind();
   }
 
@@ -38,11 +39,12 @@ export class LabelingCanvas {
     this.canvas.addEventListener('pointerdown', e => this.onPointerDown(e));
     this.canvas.addEventListener('wheel', e => this.onWheel(e), { passive: false });
     this.canvas.addEventListener('contextmenu', e => e.preventDefault());
-    window.addEventListener('pointermove', e => this.onPointerMove(e));
-    window.addEventListener('pointerup', e => this.onPointerUp(e));
-    window.addEventListener('keydown', e => this.onKeyDown(e));
-    window.addEventListener('resize', () => this.resizeAndRender());
+    window.addEventListener('pointermove', e => { if (LabelingCanvas.activeInstance === this) this.onPointerMove(e); });
+    window.addEventListener('pointerup', e => { if (LabelingCanvas.activeInstance === this) this.onPointerUp(e); });
+    window.addEventListener('keydown', e => { if (LabelingCanvas.activeInstance === this) this.onKeyDown(e); });
+    window.addEventListener('resize', () => { if (LabelingCanvas.activeInstance === this) this.resizeAndRender(); });
     document.addEventListener('click', e => {
+      if (LabelingCanvas.activeInstance !== this) return;
       if (!this.contextMenuEl) return;
       const openedAt = Number(this.contextMenuEl.dataset.openedAt || 0);
       if (Date.now() - openedAt < 120) return;
