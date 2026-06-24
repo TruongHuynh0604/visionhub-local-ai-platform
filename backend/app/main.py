@@ -6,7 +6,22 @@ from fastapi.responses import FileResponse
 from .config import FRONTEND_DIR, DATA_DIR
 from .routers import datasets, annotations, training, models, debug
 
-app = FastAPI(title="VisionHub Local AI Platform", version="2.0.0")
+APP_VERSION = "2.1.0-local-multiproject"
+NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
+class NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers.update(NO_CACHE_HEADERS)
+        return response
+
+
+app = FastAPI(title="VisionHub Local AI Platform", version=APP_VERSION)
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,15 +37,22 @@ app.include_router(training.router)
 app.include_router(models.router)
 app.include_router(debug.router)
 
-app.mount("/data", StaticFiles(directory=str(DATA_DIR)), name="data")
-app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
-app.mount("/styles", StaticFiles(directory=str(FRONTEND_DIR / "styles")), name="styles")
-app.mount("/src", StaticFiles(directory=str(FRONTEND_DIR / "src")), name="src")
+app.mount("/data", NoCacheStaticFiles(directory=str(DATA_DIR)), name="data")
+app.mount("/assets", NoCacheStaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
+app.mount("/styles", NoCacheStaticFiles(directory=str(FRONTEND_DIR / "styles")), name="styles")
+app.mount("/src", NoCacheStaticFiles(directory=str(FRONTEND_DIR / "src")), name="src")
+
 
 @app.get("/")
 def index():
-    return FileResponse(FRONTEND_DIR / "index.html")
+    return FileResponse(FRONTEND_DIR / "index.html", headers=NO_CACHE_HEADERS)
+
 
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/version")
+def version():
+    return {"version": APP_VERSION, "frontend_cache": "disabled"}
