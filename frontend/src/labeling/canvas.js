@@ -43,7 +43,10 @@ export class LabelingCanvas {
     window.addEventListener('keydown', e => this.onKeyDown(e));
     window.addEventListener('resize', () => this.resizeAndRender());
     document.addEventListener('click', e => {
-      if (this.contextMenuEl && !this.contextMenuEl.contains(e.target)) this.closeContextMenu();
+      if (!this.contextMenuEl) return;
+      const openedAt = Number(this.contextMenuEl.dataset.openedAt || 0);
+      if (Date.now() - openedAt < 120) return;
+      if (!this.contextMenuEl.contains(e.target)) this.closeContextMenu();
     });
   }
 
@@ -673,6 +676,7 @@ export class LabelingCanvas {
 
     const menu = document.createElement('div');
     menu.className = 'label-context-menu';
+    menu.dataset.openedAt = String(Date.now());
     menu.style.left = `${pt.clientX}px`;
     menu.style.top = `${pt.clientY}px`;
     menu.innerHTML = items.map(item => `
