@@ -1,4 +1,4 @@
-# VisionHub Local AI Platform V2
+# VisionHub Local AI Platform
 
 Local-first Vision AI platform prototype inspired by modern YOLO dataset/training workflows.  
 This is **not** an Ultralytics copy and does not use Ultralytics branding/assets. It is built for local development and Codex upgrades.
