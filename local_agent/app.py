@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-APP_VERSION = "0.1.0-local-training-agent"
+APP_VERSION = "0.1.1-local-training-agent"
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.json"
 PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9._-]{1,100}$")
@@ -36,7 +36,6 @@ import os
 import random
 import shutil
 import sys
-
 from ultralytics import YOLO
 
 PROJECT = Path(os.environ["VISIONHUB_PROJECT_DIR"]).resolve()
@@ -180,8 +179,6 @@ app.add_middleware(
 @app.middleware("http")
 async def private_network_access_middleware(request: Request, call_next):
     response = await call_next(request)
-    if request.headers.get("access-control-request-private-network") == "true":
-        response.headers["Access-Control-Allow-Private-Network"] = "true"
     response.headers["Access-Control-Allow-Private-Network"] = "true"
     return response
 
@@ -204,7 +201,7 @@ class TrainStartRequest(BaseModel):
 
 class JobState:
     def __init__(self):
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.process: Optional[subprocess.Popen] = None
         self.project_id: Optional[str] = None
         self.project_dir: Optional[Path] = None
@@ -232,13 +229,6 @@ def verify_token(x_visionhub_token: Optional[str], authorization: Optional[str])
         supplied = authorization.split(" ", 1)[1]
     if supplied != token:
         raise HTTPException(status_code=401, detail="Invalid Local Agent token.")
-
-
-def auth_headers(
-    x_visionhub_token: Optional[str] = Header(default=None),
-    authorization: Optional[str] = Header(default=None),
-) -> None:
-    verify_token(x_visionhub_token, authorization)
 
 
 def workspace_dir() -> Path:
@@ -335,7 +325,7 @@ def health():
 
 
 @app.get("/api/agent/config")
-def get_config(_: None = Header(default=None), x_visionhub_token: Optional[str] = Header(default=None), authorization: Optional[str] = Header(default=None)):
+def get_config(x_visionhub_token: Optional[str] = Header(default=None), authorization: Optional[str] = Header(default=None)):
     verify_token(x_visionhub_token, authorization)
     root = workspace_dir()
     return {
@@ -366,11 +356,9 @@ def start_training(req: TrainStartRequest, x_visionhub_token: Optional[str] = He
     verify_token(x_visionhub_token, authorization)
     if req.task != "detect":
         raise HTTPException(status_code=400, detail="Only detection training is supported in this agent version.")
-
     root = workspace_dir()
     if not root.exists():
         raise HTTPException(status_code=400, detail=f"workspace_dir does not exist: {root}")
-
     project_dir = project_dir_for(req.project_id)
     if not project_dir.exists():
         raise HTTPException(status_code=404, detail=f"Project not found: {project_dir}")
@@ -382,7 +370,6 @@ def start_training(req: TrainStartRequest, x_visionhub_token: Optional[str] = He
     with JOB.lock:
         if JOB.process is not None and JOB.process.poll() is None:
             raise HTTPException(status_code=409, detail=f"Training is already running for project {JOB.project_id}.")
-
         logs_dir = project_dir / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
         log_path = logs_dir / "agent_train.log"
@@ -455,7 +442,6 @@ def stop_training(x_visionhub_token: Optional[str] = Header(default=None), autho
     with JOB.lock:
         process = JOB.process
         if process is None or process.poll() is not None:
-            update_job_status_from_process()
             return {"ok": True, **status_payload(), "message": "No running training process."}
         if os.name == "nt":
             process.send_signal(signal.CTRL_BREAK_EVENT)
@@ -468,7 +454,6 @@ def stop_training(x_visionhub_token: Optional[str] = Header(default=None), autho
 
 if __name__ == "__main__":
     import uvicorn
-
     host = str(CONFIG.get("host") or "127.0.0.1")
     port = int(CONFIG.get("port") or 8765)
     print("======================================")
