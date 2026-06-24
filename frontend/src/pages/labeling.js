@@ -29,7 +29,7 @@ export async function LabelingPage() {
   }
 
   return `
-    ${Topbar('Labeling', 'Detection bbox labeling and classification mode. Local mode saves directly to your selected PC folder.')}
+    ${Topbar('Labeling', 'YOLO detection labeling with C#-style box tools. Local mode writes YOLO txt directly to your selected PC folder.')}
     <div class="labeling-layout">
       <aside class="card pad stack">
         <h3>Storage</h3>
@@ -43,13 +43,13 @@ export async function LabelingPage() {
         <h3>Dataset</h3>
         ${projectSelectHtml()}
         <select id="taskSelect" class="select"><option ${state.currentTask === 'Detection' ? 'selected' : ''}>Detection</option><option ${state.currentTask === 'Classification' ? 'selected' : ''}>Classification</option></select>
-        <div class="mode-banner"><strong>${state.currentTask}</strong><br>${state.currentTask === 'Detection' ? 'Draw, move, resize, delete, copy and change class. Auto-save YOLO txt.' : 'BBox tools are disabled. Select one image-level class.'}</div>
+        <div class="mode-banner"><strong>${state.currentTask}</strong><br>${state.currentTask === 'Detection' ? 'Draw, move, 8-point resize, group move, copy, delete, class menu, OK/NG toggle and auto-save YOLO txt.' : 'BBox tools are disabled. Select one image-level class.'}</div>
         <h3>Images</h3>
         <div class="image-list">${imageListHtml()}</div>
       </aside>
       <main class="canvas-wrap card">
         <canvas id="labelCanvas"></canvas>
-        <div class="canvas-help">${state.storageMode === 'local' ? 'Local mode: put images in /images. YOLO labels save to /labels/detection.' : 'Detection: drag blank area to draw • drag box to move • drag corner to resize • Del delete • Ctrl+C/V copy-paste • number key set class'}</div>
+        <div class="canvas-help">Detection: drag blank area draw • wheel zoom • middle mouse/Alt+drag pan • Ctrl+click multi-select • Ctrl+A select all • Space labels • right-click toggles _OK/_NG • ↓/C/X on box</div>
       </main>
       <aside class="card pad tool-panel">
         <h3>Classes</h3>
