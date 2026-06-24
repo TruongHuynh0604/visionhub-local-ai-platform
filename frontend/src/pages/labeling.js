@@ -1,4 +1,3 @@
-import { api } from '../api.js';
 import { state, setProject, setTask, setStorageMode } from '../state.js';
 import { Topbar } from '../components/topbar.js';
 import { LabelingCanvas } from '../labeling/canvas.js';
@@ -19,25 +18,19 @@ let clsValue = null;
 let localLabelingStatus = '';
 
 export async function LabelingPage() {
-  if (state.storageMode === 'local') {
-    await loadLocalProjectData(false);
-  } else {
-    const projects = await api.get('/api/projects');
-    state.projects = projects.projects;
-    if (!state.selectedProjectId || state.selectedProjectId === LOCAL_PROJECT_ID) setProject(state.projects[0]?.id || '');
-    await loadServerProjectData();
-  }
+  setStorageMode('local');
+  setProject(LOCAL_PROJECT_ID);
+  await loadLocalProjectData(false);
 
   return `
-    ${Topbar('Labeling', 'YOLO detection labeling with C#-style box tools. Local mode writes YOLO txt directly to your selected PC folder.')}
+    ${Topbar('Labeling', 'Local-only YOLO labeling. Images and labels are read/written directly from your selected PC folder.')}
     <div class="labeling-layout">
       <aside class="card pad stack">
         <h3>Storage</h3>
-        <div class="mode-banner"><strong>${state.storageMode === 'local' ? 'Local PC folder' : 'Server storage'}</strong><br>${state.storageMode === 'local' ? escapeHtml(state.localRootName || localLabelingStatus || 'Reconnect required') : 'Data is saved through FastAPI backend.'}</div>
+        <div class="mode-banner"><strong>Local PC folder only</strong><br>${escapeHtml(state.localRootName || localLabelingStatus || 'Reconnect required')}<br><span class="muted">Server save/upload is disabled.</span></div>
         <div class="row">
-          <button id="switchServerModeBtn" class="btn small">Server</button>
-          <button id="switchLocalModeBtn" class="btn small">Local PC</button>
-          <button id="reconnectLocalBtn" class="btn small">Reconnect folder</button>
+          <button id="reconnectLocalBtn" class="btn small primary">Reconnect folder</button>
+          <a href="#/datasets" class="btn small">Folder setup</a>
         </div>
 
         <h3>Dataset</h3>
@@ -58,7 +51,7 @@ export async function LabelingPage() {
         <h3>Objects</h3>
         <div id="boxList"></div>
         <div class="row">
-          <button id="saveBtn" class="btn primary">Save now</button>
+          <button id="saveBtn" class="btn primary">Save local now</button>
           <span id="saveStatus" class="muted">Ready</span>
         </div>
       </aside>
@@ -68,17 +61,6 @@ export async function LabelingPage() {
 
 function escapeHtml(value) {
   return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-}
-
-async function loadServerProjectData() {
-  if (!state.selectedProjectId) { state.classes = []; state.images = []; return; }
-  const [cls, img] = await Promise.all([
-    api.get(`/api/projects/${state.selectedProjectId}/classes`),
-    api.get(`/api/projects/${state.selectedProjectId}/images`),
-  ]);
-  state.classes = cls.classes;
-  state.images = img.images.map(image => ({ ...image, source: 'server' }));
-  state.currentImageIndex = Math.min(state.currentImageIndex, Math.max(0, state.images.length - 1));
 }
 
 async function loadLocalProjectData(requestPermission = false) {
@@ -111,18 +93,12 @@ async function loadLocalProjectData(requestPermission = false) {
 }
 
 function projectSelectHtml() {
-  if (state.storageMode === 'local') {
-    return `<select id="projectSelect" class="select"><option value="${LOCAL_PROJECT_ID}" selected>Local PC folder: ${escapeHtml(state.localRootName || 'not connected')}</option></select>`;
-  }
-  return `<select id="projectSelect" class="select"><option value="">Select project</option>${state.projects.map(p => `<option value="${p.id}" ${p.id === state.selectedProjectId ? 'selected' : ''}>${p.name}</option>`).join('')}</select>`;
+  return `<select id="projectSelect" class="select"><option value="${LOCAL_PROJECT_ID}" selected>Local PC folder: ${escapeHtml(state.localRootName || 'not connected')}</option></select>`;
 }
 
 function imageListHtml() {
   if (!state.images.length) {
-    if (state.storageMode === 'local') {
-      return `<div class="empty">${escapeHtml(localLabelingStatus || 'No images found. Put image files into the selected folder /images, then reconnect or refresh.')}</div>`;
-    }
-    return '<div class="empty">Upload images in Datasets first.</div>';
+    return `<div class="empty">${escapeHtml(localLabelingStatus || 'No images found. Put image files into the selected folder /images, then reconnect or refresh.')}</div>`;
   }
   return state.images.map((img, i) => `
     <button class="image-item ${i === state.currentImageIndex ? 'active' : ''}" data-image-index="${i}">
@@ -132,21 +108,6 @@ function imageListHtml() {
 }
 
 export function bindLabelingPage(refresh) {
-  document.getElementById('switchServerModeBtn')?.addEventListener('click', async () => {
-    setStorageMode('server');
-    if (state.selectedProjectId === LOCAL_PROJECT_ID) setProject(state.projects[0]?.id || '');
-    state.currentImageIndex = 0;
-    await refresh();
-  });
-
-  document.getElementById('switchLocalModeBtn')?.addEventListener('click', async () => {
-    setStorageMode('local');
-    setProject(LOCAL_PROJECT_ID);
-    state.currentImageIndex = 0;
-    await loadLocalProjectData(true);
-    await refresh();
-  });
-
   document.getElementById('reconnectLocalBtn')?.addEventListener('click', async () => {
     setStorageMode('local');
     setProject(LOCAL_PROJECT_ID);
@@ -154,9 +115,9 @@ export function bindLabelingPage(refresh) {
     await refresh();
   });
 
-  document.getElementById('projectSelect')?.addEventListener('change', async e => {
-    if (e.target.value === LOCAL_PROJECT_ID) setStorageMode('local');
-    else { setStorageMode('server'); setProject(e.target.value); }
+  document.getElementById('projectSelect')?.addEventListener('change', async () => {
+    setStorageMode('local');
+    setProject(LOCAL_PROJECT_ID);
     state.currentImageIndex = 0;
     await refresh();
   });
@@ -167,14 +128,14 @@ export function bindLabelingPage(refresh) {
   }));
 
   const canvas = document.getElementById('labelCanvas');
-  if (canvas && state.selectedProjectId && state.images[state.currentImageIndex]) {
+  if (canvas && state.localFsReady && state.images[state.currentImageIndex]) {
     canvasTool = new LabelingCanvas(canvas, {
       classes: state.classes,
       onChange: (boxes, selectedId) => { lastBoxes = boxes; lastSelected = selectedId; renderSidePanels(); },
-      onSaved: () => { const s = document.getElementById('saveStatus'); if (s) s.textContent = `Saved ${new Date().toLocaleTimeString()}`; },
+      onSaved: () => { const s = document.getElementById('saveStatus'); if (s) s.textContent = `Saved local ${new Date().toLocaleTimeString()}`; },
     });
     canvasTool.activeClassId = 0;
-    canvasTool.load(state.selectedProjectId, state.images[state.currentImageIndex], state.currentTask).then(async () => {
+    canvasTool.load(LOCAL_PROJECT_ID, state.images[state.currentImageIndex], state.currentTask).then(async () => {
       if (state.currentTask === 'Classification') await loadClassificationValue();
       renderSidePanels();
     }).catch(err => {
@@ -188,6 +149,7 @@ export function bindLabelingPage(refresh) {
   }
 
   document.getElementById('saveBtn')?.addEventListener('click', async () => {
+    if (!state.localFsReady) return alert('Reconnect local folder first.');
     if (state.currentTask === 'Detection') await canvasTool?.save();
     else await saveClassificationValue();
   });
@@ -195,24 +157,15 @@ export function bindLabelingPage(refresh) {
 
 async function loadClassificationValue() {
   const img = state.images[state.currentImageIndex];
-  if (!img) return;
-  if (state.storageMode === 'local' && state.localRootHandle) {
-    clsValue = await readLocalClassification(state.localRootHandle, img.filename);
-    return;
-  }
-  const res = await api.get(`/api/projects/${state.selectedProjectId}/images/${encodeURIComponent(img.filename)}/classification`);
-  clsValue = res.class_id;
+  if (!img || !state.localRootHandle) return;
+  clsValue = await readLocalClassification(state.localRootHandle, img.filename);
 }
 
 async function saveClassificationValue() {
   const img = state.images[state.currentImageIndex];
-  if (!img) return;
-  if (state.storageMode === 'local' && state.localRootHandle) {
-    await writeLocalClassification(state.localRootHandle, img.filename, clsValue);
-  } else {
-    await api.put(`/api/projects/${state.selectedProjectId}/images/${encodeURIComponent(img.filename)}/classification`, { class_id: clsValue });
-  }
-  const s = document.getElementById('saveStatus'); if (s) s.textContent = `Saved ${new Date().toLocaleTimeString()}`;
+  if (!img || !state.localRootHandle) return;
+  await writeLocalClassification(state.localRootHandle, img.filename, clsValue);
+  const s = document.getElementById('saveStatus'); if (s) s.textContent = `Saved local ${new Date().toLocaleTimeString()}`;
 }
 
 function renderSidePanels() {
@@ -222,8 +175,8 @@ function renderSidePanels() {
   if (!classPanel || !boxList || !clsPanel) return;
 
   if (!state.classes.length) {
-    classPanel.innerHTML = '<div class="empty">No classes. In local mode, edit classes.txt from Datasets.</div>';
-    boxList.innerHTML = '<div class="empty">No image loaded.</div>';
+    classPanel.innerHTML = '<div class="empty">No classes. Open Datasets, select a local folder, then edit classes.txt.</div>';
+    boxList.innerHTML = '<div class="empty">No local image loaded.</div>';
     clsPanel.innerHTML = '';
     return;
   }
