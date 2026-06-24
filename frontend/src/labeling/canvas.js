@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { getSavedRootHandle, readLocalYoloBoxes, writeLocalYoloBoxes } from '../local/file-system.js';
 
 function uid() { return `box-${Math.random().toString(36).slice(2, 10)}`; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -9,6 +10,7 @@ export class LabelingCanvas {
     this.ctx = canvas.getContext('2d');
     this.options = options;
     this.image = new Image();
+    this.imageInfo = null;
     this.boxes = [];
     this.activeClassId = 0;
     this.selectedId = null;
@@ -34,17 +36,24 @@ export class LabelingCanvas {
   async load(projectId, imageInfo, mode = 'Detection') {
     this.projectId = projectId;
     this.filename = imageInfo.filename;
+    this.imageInfo = imageInfo;
     this.mode = mode;
     this.selectedId = null;
     this.image = await this.loadImage(imageInfo.url);
     if (mode === 'Detection') {
-      const res = await api.get(`/api/projects/${projectId}/images/${encodeURIComponent(imageInfo.filename)}/annotations`);
-      this.boxes = (res.boxes || []).map(b => ({ ...b, id: b.id || uid() }));
+      if (imageInfo.source === 'local-fs') {
+        const rootHandle = await getSavedRootHandle();
+        this.boxes = (await readLocalYoloBoxes(rootHandle, imageInfo.filename)).map(b => ({ ...b, id: b.id || uid() }));
+      } else {
+        const res = await api.get(`/api/projects/${projectId}/images/${encodeURIComponent(imageInfo.filename)}/annotations`);
+        this.boxes = (res.boxes || []).map(b => ({ ...b, id: b.id || uid() }));
+      }
     } else {
       this.boxes = [];
     }
     this.resizeAndRender();
     this.options.onChange?.(this.boxes, this.selectedId);
+    console.info('[labeling] image loaded', { source: imageInfo.source || 'server', filename: imageInfo.filename, mode, boxes: this.boxes.length });
   }
 
   loadImage(src) {
@@ -52,7 +61,7 @@ export class LabelingCanvas {
       const img = new Image();
       img.onload = () => resolve(img);
       img.onerror = reject;
-      img.src = src + `?t=${Date.now()}`;
+      img.src = src?.startsWith('blob:') || src?.startsWith('data:') ? src : src + `?t=${Date.now()}`;
     });
   }
 
@@ -269,7 +278,14 @@ export class LabelingCanvas {
   async save() {
     if (!this.projectId || !this.filename || this.mode !== 'Detection') return;
     const boxes = this.boxes.map(({ id, class_id, x, y, w, h }) => ({ id, class_id, x, y, w, h }));
-    await api.put(`/api/projects/${this.projectId}/images/${encodeURIComponent(this.filename)}/annotations`, { boxes });
+    if (this.imageInfo?.source === 'local-fs') {
+      const rootHandle = await getSavedRootHandle();
+      await writeLocalYoloBoxes(rootHandle, this.filename, boxes);
+      console.info('[labeling] local YOLO label saved', { filename: this.filename, boxes: boxes.length });
+    } else {
+      await api.put(`/api/projects/${this.projectId}/images/${encodeURIComponent(this.filename)}/annotations`, { boxes });
+      console.info('[labeling] server annotation saved', { filename: this.filename, boxes: boxes.length });
+    }
     this.options.onSaved?.();
   }
 }
