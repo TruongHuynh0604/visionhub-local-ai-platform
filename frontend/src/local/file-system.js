@@ -208,6 +208,57 @@ function isImageFileName(name) {
   return /\.(jpg|jpeg|png|bmp|webp|gif|tif|tiff)$/i.test(name);
 }
 
+function normalizeLocalFileName(name) {
+  return String(name || 'image')
+    .split(/[\\/]/)
+    .pop()
+    .replace(/[<>:"|?*\u0000-\u001F]/g, '_')
+    .replace(/^\.+/, '_')
+    .trim() || `image_${Date.now()}`;
+}
+
+async function writeBlobToDir(dirHandle, fileName, blob) {
+  const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(blob);
+  await writable.close();
+}
+
+export async function importLocalImageFiles(rootHandle, fileList) {
+  if (!rootHandle) throw new Error('Select or reconnect a local folder first.');
+  const ok = await requestRootPermission(rootHandle);
+  if (!ok) throw new Error('Read/write permission was not granted for the selected folder.');
+  await ensureVisionHubStructure(rootHandle);
+
+  const files = Array.from(fileList || []);
+  const imagesDir = await getDirectoryByPath(rootHandle, 'images', true);
+  const result = { imported: 0, skipped: 0, overwritten: 0, files: [], skippedFiles: [] };
+
+  for (const file of files) {
+    const originalName = normalizeLocalFileName(file?.name || '');
+    if (!file || !isImageFileName(originalName)) {
+      result.skipped += 1;
+      if (originalName) result.skippedFiles.push(originalName);
+      continue;
+    }
+
+    let existed = false;
+    try {
+      await imagesDir.getFileHandle(originalName, { create: false });
+      existed = true;
+    } catch {
+      existed = false;
+    }
+
+    await writeBlobToDir(imagesDir, originalName, file);
+    result.imported += 1;
+    if (existed) result.overwritten += 1;
+    result.files.push(originalName);
+  }
+
+  return result;
+}
+
 function imageSizeFromUrl(url) {
   return new Promise(resolve => {
     const img = new Image();
