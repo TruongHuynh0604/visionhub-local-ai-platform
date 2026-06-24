@@ -1,0 +1,7 @@
+{
+  "host": "127.0.0.1",
+  "port": 8765,
+  "workspace_dir": "D:/VisionHub_Workspace",
+  "token": "visionhub-local-dev-token",
+  "allowed_origins": ["*"]
+}
