@@ -1,0 +1,7 @@
+services:
+- type: web
+  name: visionhub-local-ai-platform
+  runtime: python
+  plan: free
+  buildCommand: pip install -r backend/requirements.txt
+  startCommand: bash run_render.sh
