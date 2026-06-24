@@ -12,7 +12,7 @@ const HANDLE_SIZE = 16;
 const BUTTON_SIZE = 18;
 
 export class LabelingCanvas {
-  constructor(canvas, options) {
+  constructor(canvas, options = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.options = options;
@@ -44,20 +44,23 @@ export class LabelingCanvas {
     window.addEventListener('keydown', e => { if (LabelingCanvas.activeInstance === this) this.onKeyDown(e); });
     window.addEventListener('resize', () => { if (LabelingCanvas.activeInstance === this) this.resizeAndRender(); });
     document.addEventListener('click', e => {
-      if (LabelingCanvas.activeInstance !== this) return;
-      if (!this.contextMenuEl) return;
+      if (LabelingCanvas.activeInstance !== this || !this.contextMenuEl) return;
       const openedAt = Number(this.contextMenuEl.dataset.openedAt || 0);
       if (Date.now() - openedAt < 120) return;
       if (!this.contextMenuEl.contains(e.target)) this.closeContextMenu();
     });
   }
 
-  get selectedId() {
-    return this.selectedIds[0] || null;
-  }
+  get selectedId() { return this.selectedIds[0] || null; }
+  emitChange() { this.options.onChange?.(this.boxes, this.selectedId); }
 
-  emitChange() {
-    this.options.onChange?.(this.boxes, this.selectedId);
+  setClasses(classes) {
+    this.options.classes = Array.from(classes || []);
+    const maxClassId = Math.max(0, this.options.classes.length - 1);
+    this.activeClassId = clamp(this.activeClassId, 0, maxClassId);
+    for (const box of this.boxes) box.class_id = clamp(Number(box.class_id || 0), 0, maxClassId);
+    this.emitChange();
+    this.render();
   }
 
   async load(projectId, imageInfo, mode = 'Detection') {
@@ -75,7 +78,7 @@ export class LabelingCanvas {
     if (mode === 'Detection') {
       if (imageInfo.source === 'local-fs') {
         const rootHandle = await getSavedRootHandle();
-        this.boxes = (await readLocalYoloBoxes(rootHandle, imageInfo.filename)).map(b => ({ ...b, id: b.id || uid() }));
+        this.boxes = (await readLocalYoloBoxes(rootHandle, imageInfo.filename, projectId)).map(b => ({ ...b, id: b.id || uid() }));
       } else {
         const res = await api.get(`/api/projects/${projectId}/images/${encodeURIComponent(imageInfo.filename)}/annotations`);
         this.boxes = (res.boxes || []).map(b => ({ ...b, id: b.id || uid() }));
@@ -86,12 +89,7 @@ export class LabelingCanvas {
 
     this.resizeAndRender();
     this.emitChange();
-    console.info('[labeling] image loaded', {
-      source: imageInfo.source || 'server',
-      filename: imageInfo.filename,
-      mode,
-      boxes: this.boxes.length,
-    });
+    console.info('[labeling] image loaded', { source: imageInfo.source || 'server', projectId, filename: imageInfo.filename, mode, boxes: this.boxes.length });
   }
 
   loadImage(src) {
@@ -146,21 +144,15 @@ export class LabelingCanvas {
       return;
     }
 
-    for (const box of this.boxes) {
-      this.drawBox(box, this.selectedIds.includes(box.id), false);
-    }
-
-    if (this.action?.type === 'create') {
-      this.drawBox(this.action.preview, true, true);
-    }
-
+    for (const box of this.boxes) this.drawBox(box, this.selectedIds.includes(box.id), false);
+    if (this.action?.type === 'create') this.drawBox(this.action.preview, true, true);
     this.drawHud();
   }
 
   drawHud() {
-    const ctx = this.ctx;
     const selectedCount = this.selectedIds.length;
-    const text = `Zoom ${this.zoom.toFixed(2)}x${selectedCount ? ` • Selected ${selectedCount}` : ''}${this.showLabels ? '' : ' • Labels hidden'}`;
+    const text = `Project ${this.projectId} • Zoom ${this.zoom.toFixed(2)}x${selectedCount ? ` • Selected ${selectedCount}` : ''}${this.showLabels ? '' : ' • Labels hidden'}`;
+    const ctx = this.ctx;
     ctx.save();
     ctx.font = '700 12px system-ui';
     const tw = ctx.measureText(text).width + 18;
@@ -171,9 +163,7 @@ export class LabelingCanvas {
     ctx.restore();
   }
 
-  className(classId) {
-    return this.options.classes?.[classId] ?? `class ${classId}`;
-  }
+  className(classId) { return this.options.classes?.[classId] ?? `class ${classId}`; }
 
   classColor(classId, preview = false) {
     if (preview) return '#f59e0b';
@@ -193,7 +183,6 @@ export class LabelingCanvas {
     const isNg = /_NG$/i.test(label);
 
     ctx.save();
-
     if (selected && !preview) {
       ctx.lineWidth = 4;
       ctx.strokeStyle = '#f59e0b';
@@ -222,14 +211,12 @@ export class LabelingCanvas {
 
     if (!preview) this.drawActionButtons(r);
     if (selected && !preview) this.drawHandles(r);
-
     ctx.restore();
   }
 
   drawActionButtons(r) {
-    const buttons = this.actionButtonRects(r);
     const ctx = this.ctx;
-    for (const btn of buttons) {
+    for (const btn of this.actionButtonRects(r)) {
       ctx.fillStyle = 'rgba(0,0,0,.58)';
       ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
       ctx.strokeStyle = 'rgba(255,255,255,.95)';
@@ -270,26 +257,16 @@ export class LabelingCanvas {
     const midX = r.x + r.w / 2;
     const midY = r.y + r.h / 2;
     return [
-      { name: 'nw', x: r.x, y: r.y },
-      { name: 'n', x: midX, y: r.y },
-      { name: 'ne', x: r.x + r.w, y: r.y },
-      { name: 'e', x: r.x + r.w, y: midY },
-      { name: 'se', x: r.x + r.w, y: r.y + r.h },
-      { name: 's', x: midX, y: r.y + r.h },
-      { name: 'sw', x: r.x, y: r.y + r.h },
-      { name: 'w', x: r.x, y: midY },
+      { name: 'nw', x: r.x, y: r.y }, { name: 'n', x: midX, y: r.y }, { name: 'ne', x: r.x + r.w, y: r.y },
+      { name: 'e', x: r.x + r.w, y: midY }, { name: 'se', x: r.x + r.w, y: r.y + r.h }, { name: 's', x: midX, y: r.y + r.h },
+      { name: 'sw', x: r.x, y: r.y + r.h }, { name: 'w', x: r.x, y: midY },
     ];
   }
 
   normToImageRect(b) {
     const iw = this.image.naturalWidth || 1;
     const ih = this.image.naturalHeight || 1;
-    return {
-      x: (b.x - b.w / 2) * iw,
-      y: (b.y - b.h / 2) * ih,
-      w: b.w * iw,
-      h: b.h * ih,
-    };
+    return { x: (b.x - b.w / 2) * iw, y: (b.y - b.h / 2) * ih, w: b.w * iw, h: b.h * ih };
   }
 
   imageRectToNorm(r) {
@@ -299,12 +276,7 @@ export class LabelingCanvas {
     const y1 = clamp(Math.min(r.y, r.y + r.h), 0, ih);
     const x2 = clamp(Math.max(r.x, r.x + r.w), 0, iw);
     const y2 = clamp(Math.max(r.y, r.y + r.h), 0, ih);
-    return {
-      x: ((x1 + x2) / 2) / iw,
-      y: ((y1 + y2) / 2) / ih,
-      w: Math.max(0.000001, (x2 - x1) / iw),
-      h: Math.max(0.000001, (y2 - y1) / ih),
-    };
+    return { x: ((x1 + x2) / 2) / iw, y: ((y1 + y2) / 2) / ih, w: Math.max(0.000001, (x2 - x1) / iw), h: Math.max(0.000001, (y2 - y1) / ih) };
   }
 
   normToCanvas(b) {
@@ -321,10 +293,7 @@ export class LabelingCanvas {
 
   canvasToImage(pt) {
     const m = this.imageMetrics();
-    return {
-      x: clamp((pt.x - m.x) / m.scale, 0, m.iw),
-      y: clamp((pt.y - m.y) / m.scale, 0, m.ih),
-    };
+    return { x: clamp((pt.x - m.x) / m.scale, 0, m.iw), y: clamp((pt.y - m.y) / m.scale, 0, m.ih) };
   }
 
   canvasRectToNorm(r) {
@@ -335,99 +304,69 @@ export class LabelingCanvas {
 
   pointer(e) {
     const rect = this.canvas.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) * this.canvas.width / rect.width,
-      y: (e.clientY - rect.top) * this.canvas.height / rect.height,
-      clientX: e.clientX,
-      clientY: e.clientY,
-    };
+    return { x: (e.clientX - rect.left) * this.canvas.width / rect.width, y: (e.clientY - rect.top) * this.canvas.height / rect.height, clientX: e.clientX, clientY: e.clientY };
   }
 
   hitTest(pt) {
     for (let i = this.boxes.length - 1; i >= 0; i--) {
       const box = this.boxes[i];
       const r = this.normToCanvas(box);
-
       for (const btn of this.actionButtonRects(r)) {
-        if (pt.x >= btn.x && pt.x <= btn.x + btn.w && pt.y >= btn.y && pt.y <= btn.y + btn.h) {
-          return { type: 'button', box, index: i, action: btn.action, rect: r };
-        }
+        if (pt.x >= btn.x && pt.x <= btn.x + btn.w && pt.y >= btn.y && pt.y <= btn.y + btn.h) return { type: 'button', box, index: i, action: btn.action, rect: r };
       }
-
       if (this.selectedIds.includes(box.id)) {
         for (const h of this.handlePoints(r)) {
-          if (Math.abs(pt.x - h.x) <= HANDLE_SIZE / 2 && Math.abs(pt.y - h.y) <= HANDLE_SIZE / 2) {
-            return { type: 'handle', box, index: i, handle: h.name, rect: r };
-          }
+          if (Math.abs(pt.x - h.x) <= HANDLE_SIZE / 2 && Math.abs(pt.y - h.y) <= HANDLE_SIZE / 2) return { type: 'handle', box, index: i, handle: h.name, rect: r };
         }
       }
-
-      if (pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h) {
-        return { type: 'box', box, index: i, rect: r };
-      }
+      if (pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h) return { type: 'box', box, index: i, rect: r };
     }
     return null;
   }
 
   onPointerDown(e) {
-    this.closeContextMenu();
+    LabelingCanvas.activeInstance = this;
     if (this.mode !== 'Detection') return;
-
     const pt = this.pointer(e);
 
     if (e.button === 1 || (e.button === 0 && e.altKey)) {
       this.action = { type: 'pan', start: pt, panStart: { ...this.pan } };
-      this.canvas.setPointerCapture?.(e.pointerId);
-      this.canvas.style.cursor = 'grabbing';
-      e.preventDefault();
+      this.canvas.style.cursor = 'grab';
       return;
     }
 
     if (e.button === 2) {
       const hit = this.hitTest(pt);
       if (hit?.type === 'box') {
-        this.selectOnly(hit.box.id);
         this.toggleOkNgClass(hit.box);
         this.scheduleSave();
         this.emitChange();
         this.render();
       }
-      e.preventDefault();
       return;
     }
 
     if (e.button !== 0) return;
-
     const hit = this.hitTest(pt);
 
     if (hit?.type === 'button') {
       this.handleBoxButtonAction(hit.box, hit.action, pt);
-      e.preventDefault();
       return;
     }
 
     if (hit?.type === 'handle') {
       this.selectOnly(hit.box.id);
-      this.action = { type: 'resize', start: pt, boxId: hit.box.id, startBox: { ...hit.box }, handle: hit.handle };
+      this.action = { type: 'resize', start: pt, boxId: hit.box.id, handle: hit.handle, startBox: { ...hit.box } };
       this.emitChange();
       this.render();
       return;
     }
 
     if (hit?.type === 'box') {
-      if (e.ctrlKey || e.metaKey) {
+      if (e.ctrlKey) {
         this.toggleSelection(hit.box.id);
-        this.emitChange();
-        this.render();
-        return;
-      }
-
-      if (this.selectedIds.length > 1 && this.selectedIds.includes(hit.box.id)) {
-        this.action = {
-          type: 'moveGroup',
-          start: pt,
-          startBoxes: this.boxes.filter(b => this.selectedIds.includes(b.id)).map(b => ({ ...b })),
-        };
+      } else if (this.selectedIds.length > 1 && this.selectedIds.includes(hit.box.id)) {
+        this.action = { type: 'moveGroup', start: pt, startBoxes: this.boxes.filter(b => this.selectedIds.includes(b.id)).map(b => ({ ...b })) };
       } else {
         this.selectOnly(hit.box.id);
         this.action = { type: 'move', start: pt, boxId: hit.box.id, startBox: { ...hit.box } };
@@ -445,12 +384,7 @@ export class LabelingCanvas {
     }
 
     const startImage = this.canvasToImage(pt);
-    this.action = {
-      type: 'create',
-      start: pt,
-      startImage,
-      preview: { id: uid(), class_id: this.activeClassId, x: 0, y: 0, w: 0, h: 0 },
-    };
+    this.action = { type: 'create', start: pt, startImage, preview: { id: uid(), class_id: this.activeClassId, x: 0, y: 0, w: 0, h: 0 } };
     this.emitChange();
     this.render();
   }
@@ -458,45 +392,28 @@ export class LabelingCanvas {
   onPointerMove(e) {
     if (this.mode !== 'Detection') return;
     const pt = this.pointer(e);
-
-    if (!this.action) {
-      this.updateCursor(pt);
-      return;
-    }
+    if (!this.action) { this.updateCursor(pt); return; }
 
     if (this.action.type === 'pan') {
-      this.pan = {
-        x: this.action.panStart.x + pt.x - this.action.start.x,
-        y: this.action.panStart.y + pt.y - this.action.start.y,
-      };
+      this.pan = { x: this.action.panStart.x + pt.x - this.action.start.x, y: this.action.panStart.y + pt.y - this.action.start.y };
       this.render();
       return;
     }
-
     if (this.action.type === 'create') {
       const s = this.action.start;
-      this.action.preview = {
-        ...this.action.preview,
-        ...this.canvasRectToNorm({ x: s.x, y: s.y, w: pt.x - s.x, h: pt.y - s.y }),
-      };
+      this.action.preview = { ...this.action.preview, ...this.canvasRectToNorm({ x: s.x, y: s.y, w: pt.x - s.x, h: pt.y - s.y }) };
     }
-
     if (this.action.type === 'move') {
       const box = this.boxes.find(b => b.id === this.action.boxId);
       if (box) this.moveBoxFromStart(box, this.action.startBox, pt, this.action.start);
     }
-
     if (this.action.type === 'moveGroup') {
       for (const startBox of this.action.startBoxes) {
         const box = this.boxes.find(b => b.id === startBox.id);
         if (box) this.moveBoxFromStart(box, startBox, pt, this.action.start);
       }
     }
-
-    if (this.action.type === 'resize') {
-      this.applyResize(pt);
-    }
-
+    if (this.action.type === 'resize') this.applyResize(pt);
     this.render();
   }
 
@@ -512,27 +429,22 @@ export class LabelingCanvas {
   applyResize(pt) {
     const box = this.boxes.find(b => b.id === this.action.boxId);
     if (!box) return;
-
     const startRect = this.normToImageRect(this.action.startBox);
     const imgPt = this.canvasToImage(pt);
     let x1 = startRect.x;
     let y1 = startRect.y;
     let x2 = startRect.x + startRect.w;
     let y2 = startRect.y + startRect.h;
-
     if (this.action.handle.includes('n')) y1 = imgPt.y;
     if (this.action.handle.includes('s')) y2 = imgPt.y;
     if (this.action.handle.includes('w')) x1 = imgPt.x;
     if (this.action.handle.includes('e')) x2 = imgPt.x;
-
     Object.assign(box, this.imageRectToNorm({ x: x1, y: y1, w: x2 - x1, h: y2 - y1 }));
   }
 
-  onPointerUp(e) {
+  onPointerUp() {
     if (!this.action) return;
-
     const actionType = this.action.type;
-
     if (actionType === 'create') {
       const b = this.action.preview;
       const r = this.normToImageRect(b);
@@ -543,10 +455,8 @@ export class LabelingCanvas {
         console.info('[labeling] ignored tiny box', { min: MIN_BOX_IMAGE_PX, width: Math.round(r.w), height: Math.round(r.h) });
       }
     }
-
     this.action = null;
     this.canvas.style.cursor = 'default';
-
     if (['create', 'move', 'moveGroup', 'resize'].includes(actionType)) this.scheduleSave();
     this.emitChange();
     this.render();
@@ -555,74 +465,33 @@ export class LabelingCanvas {
   onWheel(e) {
     if (this.mode !== 'Detection' || !this.image.complete) return;
     e.preventDefault();
-
     const pt = this.pointer(e);
     const oldZoom = this.zoom;
     const nextZoom = clamp(e.deltaY < 0 ? this.zoom * 1.1 : this.zoom / 1.1, 1, 20);
     if (nextZoom === oldZoom) return;
-
     const oldMetrics = this.imageMetrics(oldZoom, this.pan);
     const imgX = (pt.x - oldMetrics.x) / oldMetrics.scale;
     const imgY = (pt.y - oldMetrics.y) / oldMetrics.scale;
-
     const newMetricsNoPan = this.imageMetrics(nextZoom, { x: 0, y: 0 });
     this.zoom = nextZoom;
-    this.pan = {
-      x: pt.x - imgX * newMetricsNoPan.scale - newMetricsNoPan.x,
-      y: pt.y - imgY * newMetricsNoPan.scale - newMetricsNoPan.y,
-    };
-
+    this.pan = { x: pt.x - imgX * newMetricsNoPan.scale - newMetricsNoPan.x, y: pt.y - imgY * newMetricsNoPan.scale - newMetricsNoPan.y };
     this.render();
   }
 
   onKeyDown(e) {
-    if (this.mode !== 'Detection') return;
-    if (isEditableTarget(e.target)) return;
-
+    if (this.mode !== 'Detection' || isEditableTarget(e.target)) return;
     const key = e.key.toLowerCase();
-
     if (e.ctrlKey && key === 'a') {
       this.selectedIds = this.boxes.map(b => b.id);
-      this.emitChange();
-      this.render();
-      e.preventDefault();
-      return;
+      this.emitChange(); this.render(); e.preventDefault(); return;
     }
-
     if (e.key === 'Escape') {
-      this.clearSelection();
-      this.action = null;
-      this.emitChange();
-      this.render();
-      e.preventDefault();
-      return;
+      this.clearSelection(); this.action = null; this.emitChange(); this.render(); e.preventDefault(); return;
     }
-
-    if (e.key === ' ') {
-      this.showLabels = !this.showLabels;
-      this.render();
-      e.preventDefault();
-      return;
-    }
-
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-      this.deleteSelected();
-      e.preventDefault();
-      return;
-    }
-
-    if (e.ctrlKey && key === 'c') {
-      this.copySelected();
-      e.preventDefault();
-      return;
-    }
-
-    if (e.ctrlKey && key === 'v') {
-      this.pasteBox();
-      e.preventDefault();
-      return;
-    }
-
+    if (e.key === ' ') { this.showLabels = !this.showLabels; this.render(); e.preventDefault(); return; }
+    if (e.key === 'Delete' || e.key === 'Backspace') { this.deleteSelected(); e.preventDefault(); return; }
+    if (e.ctrlKey && key === 'c') { this.copySelected(); e.preventDefault(); return; }
+    if (e.ctrlKey && key === 'v') { this.pasteBox(); e.preventDefault(); return; }
     if (/^[0-9]$/.test(e.key)) {
       const classId = Number(e.key);
       if (classId < (this.options.classes?.length || 0)) this.setActiveClass(classId);
@@ -648,72 +517,38 @@ export class LabelingCanvas {
       const pasted = this.createOffsetCopy(box, 10);
       this.boxes.push(pasted);
       this.selectOnly(pasted.id);
-      this.scheduleSave();
-      this.emitChange();
-      this.render();
-      return;
+      this.scheduleSave(); this.emitChange(); this.render(); return;
     }
-
-    if (action === 'delete') {
-      this.deleteBox(box.id);
-      return;
-    }
-
-    if (action === 'classMenu') {
-      this.showClassMenu(box, pt);
-    }
+    if (action === 'delete') { this.deleteBox(box.id); return; }
+    if (action === 'classMenu') this.showClassMenu(box, pt);
   }
 
   showClassMenu(box, pt) {
     const classes = this.options.classes || [];
     const current = this.className(box.class_id);
     const prefix = current.includes('_') ? current.slice(0, current.indexOf('_') + 1) : `${current}_`;
-    let items = classes
-      .map((name, id) => ({ name, id }))
-      .filter(x => x.name.toLowerCase().startsWith(prefix.toLowerCase()));
-
+    let items = classes.map((name, id) => ({ name, id })).filter(x => x.name.toLowerCase().startsWith(prefix.toLowerCase()));
     if (!items.length) items = classes.map((name, id) => ({ name, id }));
-
     this.closeContextMenu();
-
     const menu = document.createElement('div');
     menu.className = 'label-context-menu';
     menu.dataset.openedAt = String(Date.now());
     menu.style.left = `${pt.clientX}px`;
     menu.style.top = `${pt.clientY}px`;
-    menu.innerHTML = items.map(item => `
-      <button type="button" data-class-id="${item.id}" class="${item.id === box.class_id ? 'active' : ''}">
-        <span>${item.id}. ${this.escapeHtml(item.name)}</span>
-      </button>
-    `).join('');
-
+    menu.innerHTML = items.map(item => `<button type="button" data-class-id="${item.id}" class="${item.id === box.class_id ? 'active' : ''}"><span>${item.id}. ${this.escapeHtml(item.name)}</span></button>`).join('');
     menu.querySelectorAll('[data-class-id]').forEach(btn => {
       btn.addEventListener('click', () => {
         box.class_id = Number(btn.dataset.classId);
         this.activeClassId = box.class_id;
-        this.closeContextMenu();
-        this.scheduleSave();
-        this.emitChange();
-        this.render();
+        this.closeContextMenu(); this.scheduleSave(); this.emitChange(); this.render();
       });
     });
-
     document.body.appendChild(menu);
     this.contextMenuEl = menu;
   }
 
-  closeContextMenu() {
-    if (this.contextMenuEl) this.contextMenuEl.remove();
-    this.contextMenuEl = null;
-  }
-
-  escapeHtml(value) {
-    return String(value ?? '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;');
-  }
+  closeContextMenu() { if (this.contextMenuEl) this.contextMenuEl.remove(); this.contextMenuEl = null; }
+  escapeHtml(value) { return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;'); }
 
   toggleOkNgClass(box) {
     const classes = this.options.classes || [];
@@ -722,113 +557,45 @@ export class LabelingCanvas {
     if (/_OK$/i.test(current)) target = current.replace(/_OK$/i, '_NG');
     if (/_NG$/i.test(current)) target = current.replace(/_NG$/i, '_OK');
     if (!target) return;
-
     const targetId = classes.findIndex(name => name.toLowerCase() === target.toLowerCase());
-    if (targetId >= 0) {
-      box.class_id = targetId;
-      this.activeClassId = targetId;
-      console.info('[labeling] toggled OK/NG class', { from: current, to: target });
-    }
+    if (targetId >= 0) { box.class_id = targetId; this.activeClassId = targetId; console.info('[labeling] toggled OK/NG class', { from: current, to: target }); }
   }
 
   createOffsetCopy(box, imageOffsetPx = 10) {
     const iw = this.image.naturalWidth || 1;
     const ih = this.image.naturalHeight || 1;
-    return {
-      ...box,
-      id: uid(),
-      x: clamp(box.x + imageOffsetPx / iw, box.w / 2, 1 - box.w / 2),
-      y: clamp(box.y + imageOffsetPx / ih, box.h / 2, 1 - box.h / 2),
-    };
+    return { ...box, id: uid(), x: clamp(box.x + imageOffsetPx / iw, box.w / 2, 1 - box.w / 2), y: clamp(box.y + imageOffsetPx / ih, box.h / 2, 1 - box.h / 2) };
   }
 
-  selectOnly(id) {
-    this.selectedIds = id ? [id] : [];
-  }
-
-  toggleSelection(id) {
-    if (this.selectedIds.includes(id)) {
-      this.selectedIds = this.selectedIds.filter(x => x !== id);
-    } else {
-      this.selectedIds = [...this.selectedIds, id];
-    }
-  }
-
-  clearSelection() {
-    this.selectedIds = [];
-  }
+  selectOnly(id) { this.selectedIds = id ? [id] : []; }
+  toggleSelection(id) { this.selectedIds = this.selectedIds.includes(id) ? this.selectedIds.filter(x => x !== id) : [...this.selectedIds, id]; }
+  clearSelection() { this.selectedIds = []; }
 
   setActiveClass(classId) {
     this.activeClassId = classId;
     const selectedSet = new Set(this.selectedIds);
     let changed = false;
     for (const box of this.boxes) {
-      if (selectedSet.has(box.id)) {
-        box.class_id = classId;
-        changed = true;
-      }
+      if (selectedSet.has(box.id)) { box.class_id = classId; changed = true; }
     }
     if (changed) this.scheduleSave();
-    this.emitChange();
-    this.render();
+    this.emitChange(); this.render();
   }
 
-  selectBox(id) {
-    this.selectOnly(id);
-    this.emitChange();
-    this.render();
-  }
-
-  deleteBox(id) {
-    this.boxes = this.boxes.filter(b => b.id !== id);
-    this.selectedIds = this.selectedIds.filter(x => x !== id);
-    this.scheduleSave();
-    this.emitChange();
-    this.render();
-  }
-
-  deleteSelected() {
-    if (!this.selectedIds.length) return;
-    const selected = new Set(this.selectedIds);
-    this.boxes = this.boxes.filter(b => !selected.has(b.id));
-    this.clearSelection();
-    this.scheduleSave();
-    this.emitChange();
-    this.render();
-  }
-
-  copySelected() {
-    const selected = new Set(this.selectedIds);
-    this.clipboard = this.boxes.filter(b => selected.has(b.id)).map(b => ({ ...b }));
-    if (!this.clipboard.length && this.selectedId) {
-      const box = this.boxes.find(b => b.id === this.selectedId);
-      if (box) this.clipboard = [{ ...box }];
-    }
-    console.info('[labeling] copied boxes', { count: this.clipboard.length });
-  }
-
-  pasteBox() {
-    if (!this.clipboard.length) return;
-    const pasted = this.clipboard.map(b => this.createOffsetCopy(b, 10));
-    this.boxes.push(...pasted);
-    this.selectedIds = pasted.map(b => b.id);
-    this.scheduleSave();
-    this.emitChange();
-    this.render();
-  }
-
-  scheduleSave() {
-    clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => this.save().catch(err => console.error('[labeling] autosave failed', err)), 250);
-  }
+  selectBox(id) { this.selectOnly(id); this.emitChange(); this.render(); }
+  deleteBox(id) { this.boxes = this.boxes.filter(b => b.id !== id); this.selectedIds = this.selectedIds.filter(x => x !== id); this.scheduleSave(); this.emitChange(); this.render(); }
+  deleteSelected() { if (!this.selectedIds.length) return; const selected = new Set(this.selectedIds); this.boxes = this.boxes.filter(b => !selected.has(b.id)); this.clearSelection(); this.scheduleSave(); this.emitChange(); this.render(); }
+  copySelected() { const selected = new Set(this.selectedIds); this.clipboard = this.boxes.filter(b => selected.has(b.id)).map(b => ({ ...b })); console.info('[labeling] copied boxes', { count: this.clipboard.length }); }
+  pasteBox() { if (!this.clipboard.length) return; const pasted = this.clipboard.map(b => this.createOffsetCopy(b, 10)); this.boxes.push(...pasted); this.selectedIds = pasted.map(b => b.id); this.scheduleSave(); this.emitChange(); this.render(); }
+  scheduleSave() { clearTimeout(this.saveTimer); this.saveTimer = setTimeout(() => this.save().catch(err => console.error('[labeling] autosave failed', err)), 250); }
 
   async save() {
     if (!this.projectId || !this.filename || this.mode !== 'Detection') return;
     const boxes = this.boxes.map(({ id, class_id, x, y, w, h }) => ({ id, class_id, x, y, w, h }));
     if (this.imageInfo?.source === 'local-fs') {
       const rootHandle = await getSavedRootHandle();
-      await writeLocalYoloBoxes(rootHandle, this.filename, boxes);
-      console.info('[labeling] local YOLO label saved', { filename: this.filename, boxes: boxes.length });
+      await writeLocalYoloBoxes(rootHandle, this.filename, boxes, this.projectId);
+      console.info('[labeling] local YOLO label saved', { projectId: this.projectId, filename: this.filename, boxes: boxes.length });
     } else {
       await api.put(`/api/projects/${this.projectId}/images/${encodeURIComponent(this.filename)}/annotations`, { boxes });
       console.info('[labeling] server annotation saved', { filename: this.filename, boxes: boxes.length });
