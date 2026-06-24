@@ -5,8 +5,6 @@ const MAX_ARG_CHARS = 1600;
 
 const originalConsole = {};
 const patchedFlag = '__visionhubConsoleCapturePatched';
-let sendBuffer = [];
-let flushTimer = null;
 let internalWrite = false;
 
 export const debugSessionId = getOrCreateSessionId();
@@ -26,37 +24,23 @@ function getOrCreateSessionId() {
 
 function safeToString(value, depth = 0, seen = new WeakSet()) {
   if (value instanceof Error) {
-    return {
-      name: value.name,
-      message: value.message,
-      stack: value.stack,
-    };
+    return { name: value.name, message: value.message, stack: value.stack };
   }
-
   if (value === null || typeof value === 'undefined') return value;
   if (['string', 'number', 'boolean', 'bigint'].includes(typeof value)) return String(value);
   if (typeof value === 'function') return `[Function ${value.name || 'anonymous'}]`;
-
   if (typeof value === 'object') {
     if (seen.has(value)) return '[Circular]';
     if (depth > 2) return '[Object depth limit]';
     seen.add(value);
-
-    if (Array.isArray(value)) {
-      return value.slice(0, 30).map((item) => safeToString(item, depth + 1, seen));
-    }
-
+    if (Array.isArray(value)) return value.slice(0, 30).map((item) => safeToString(item, depth + 1, seen));
     const output = {};
     for (const key of Object.keys(value).slice(0, 30)) {
-      try {
-        output[key] = safeToString(value[key], depth + 1, seen);
-      } catch (err) {
-        output[key] = `[Read error: ${String(err)}]`;
-      }
+      try { output[key] = safeToString(value[key], depth + 1, seen); }
+      catch (err) { output[key] = `[Read error: ${String(err)}]`; }
     }
     return output;
   }
-
   return String(value);
 }
 
@@ -68,27 +52,18 @@ function limitText(text) {
 function normalizeArg(arg) {
   const value = safeToString(arg);
   if (typeof value === 'string') return limitText(value);
-  try {
-    return JSON.parse(limitText(JSON.stringify(value)));
-  } catch {
-    return limitText(String(value));
-  }
+  try { return JSON.parse(limitText(JSON.stringify(value))); }
+  catch { return limitText(String(value)); }
 }
 
 function readLocalLogs() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+  catch { return []; }
 }
 
 function writeLocalLogs(logs) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(logs.slice(-MAX_LOGS)));
-  } catch {
-    // Local storage can be unavailable in private modes. Ignore safely.
-  }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(logs.slice(-MAX_LOGS))); }
+  catch { /* localStorage may be unavailable in private mode */ }
 }
 
 function buildEntry(level, args, source = 'console') {
@@ -104,33 +79,21 @@ function buildEntry(level, args, source = 'console') {
     args: normalizedArgs,
     session_id: debugSessionId,
     userAgent: navigator.userAgent,
+    storage: 'browser-local-only',
   };
 }
 
-function saveEntry(entry, sendToServer = true) {
+function saveEntry(entry) {
   if (internalWrite) return entry;
-
   const logs = readLocalLogs();
   logs.push(entry);
   writeLocalLogs(logs);
-
-  if (sendToServer) {
-    sendBuffer.push(entry);
-    scheduleFlush();
-  }
   window.dispatchEvent(new CustomEvent('visionhub-debug-log', { detail: entry }));
   return entry;
 }
 
-function scheduleFlush() {
-  clearTimeout(flushTimer);
-  flushTimer = setTimeout(() => {
-    flushClientLogs().catch(() => {});
-  }, 1200);
-}
-
 export function logClientEvent(level, args = [], source = 'app') {
-  return saveEntry(buildEntry(level, args, source), true);
+  return saveEntry(buildEntry(level, args, source));
 }
 
 export function getClientLogs() {
@@ -139,13 +102,12 @@ export function getClientLogs() {
 
 export function clearClientLogs() {
   writeLocalLogs([]);
-  sendBuffer = [];
   window.dispatchEvent(new CustomEvent('visionhub-debug-cleared'));
 }
 
 export function downloadClientLogs() {
   const logs = getClientLogs();
-  const blob = new Blob([JSON.stringify({ session_id: debugSessionId, logs }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ session_id: debugSessionId, storage: 'browser-local-only', logs }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -157,21 +119,8 @@ export function downloadClientLogs() {
 }
 
 export async function flushClientLogs() {
-  if (!sendBuffer.length) return { ok: true, saved: 0 };
-  const batch = sendBuffer.splice(0, 80);
-
-  const res = await fetch('/api/debug/client-logs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: debugSessionId, logs: batch }),
-    keepalive: true,
-  });
-
-  if (!res.ok) {
-    sendBuffer = batch.concat(sendBuffer).slice(-MAX_LOGS);
-    throw new Error(await res.text());
-  }
-  return res.json();
+  // Local-only mode: never POST console data to Render/FastAPI.
+  return { ok: true, saved: 0, local_only: true, logs: getClientLogs().length };
 }
 
 export function setupConsoleCapture() {
@@ -181,37 +130,18 @@ export function setupConsoleCapture() {
   for (const level of ['log', 'info', 'warn', 'error', 'debug']) {
     originalConsole[level] = console[level]?.bind(console) || console.log.bind(console);
     console[level] = (...args) => {
-      try {
-        saveEntry(buildEntry(level, args, 'console'), true);
-      } catch {
-        // Never allow the logger to break the app.
-      }
+      try { saveEntry(buildEntry(level, args, 'console')); }
+      catch { /* Never allow the logger to break the app. */ }
       originalConsole[level](...args);
     };
   }
 
   window.addEventListener('error', (event) => {
-    logClientEvent('error', [{
-      message: event.message,
-      filename: event.filename,
-      lineno: event.lineno,
-      colno: event.colno,
-      error: event.error,
-    }], 'window.error');
+    logClientEvent('error', [{ message: event.message, filename: event.filename, lineno: event.lineno, colno: event.colno, error: event.error }], 'window.error');
   });
 
   window.addEventListener('unhandledrejection', (event) => {
     logClientEvent('error', [{ reason: event.reason }], 'unhandledrejection');
-  });
-
-  window.addEventListener('beforeunload', () => {
-    if (!sendBuffer.length) return;
-    try {
-      const payload = JSON.stringify({ session_id: debugSessionId, logs: sendBuffer.slice(-80) });
-      navigator.sendBeacon?.('/api/debug/client-logs', new Blob([payload], { type: 'application/json' }));
-    } catch {
-      // Ignore unload failures.
-    }
   });
 
   window.VisionHubDebug = {
@@ -224,6 +154,6 @@ export function setupConsoleCapture() {
   };
 
   internalWrite = true;
-  originalConsole.info?.('[VisionHub Debug] Console capture enabled. Use window.VisionHubDebug.getLogs().');
+  originalConsole.info?.('[VisionHub Debug] Local-only console capture enabled. Use window.VisionHubDebug.getLogs().');
   internalWrite = false;
 }
