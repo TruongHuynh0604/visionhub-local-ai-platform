@@ -61,13 +61,14 @@ export async function DatasetsPage() {
 
     <section class="card pad" style="margin-top:16px">
       <h2>Local projects</h2>
+      <p class="muted">Delete removes the full local folder <b>/projects/&lt;project-id&gt;</b> from your PC. It does not touch GitHub or Render.</p>
       ${projectsTable()}
     </section>
   `;
 }
 
 function escapeHtml(value) {
-  return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
 
 function activeProjectId() {
@@ -125,6 +126,7 @@ async function loadLocalInfo(requestPermission = false) {
       localImportStatus,
       'Upload buttons copy images into the selected local project only: /projects/<project-id>/images.',
       'Detection labels are saved into /projects/<project-id>/labels/detection as YOLO .txt files.',
+      'Delete project removes that project folder from your local PC workspace only.',
       'No images, labels, exports, logs or training data are uploaded to the server.',
     ].filter(Boolean).join('\n');
   } catch (err) {
@@ -202,7 +204,11 @@ function projectsTable() {
       <td><span class="badge">${escapeHtml(p.task_type)}</span></td>
       <td>${p.image_count}</td>
       <td>${p.classes.map(escapeHtml).join(', ')}</td>
-      <td><button class="btn small use-local-project" data-project-id="${escapeHtml(p.id)}">Use local</button> <a class="btn small" href="#/labeling">Label</a></td>
+      <td class="row" style="gap:6px">
+        <button class="btn small use-local-project" data-project-id="${escapeHtml(p.id)}">Use local</button>
+        <a class="btn small" href="#/labeling">Label</a>
+        <button class="btn small danger delete-local-project" data-project-id="${escapeHtml(p.id)}" data-project-name="${escapeHtml(p.name)}">Delete</button>
+      </td>
     </tr>`).join('')}
   </tbody></table>`;
 }
@@ -231,6 +237,29 @@ async function saveClassesFromTextarea(refresh) {
   const classes = document.getElementById('localClasses').value.split('\n').map(x => x.trim()).filter(Boolean);
   await writeLocalClasses(state.localRootHandle, classes, activeProjectId());
   console.info('[local-fs] project classes.txt saved', { projectId: activeProjectId(), classes });
+  await refresh();
+}
+
+async function deleteProjectFolder(projectId, refresh) {
+  await loadLocalInfo(true);
+  if (!state.localRootHandle || !state.localFsReady) throw new Error('Reconnect local workspace first.');
+  const safeProjectId = String(projectId || '').trim();
+  if (!safeProjectId) throw new Error('Missing project id.');
+  const projectsDir = await state.localRootHandle.getDirectoryHandle('projects', { create: true });
+  await projectsDir.removeEntry(safeProjectId, { recursive: true });
+
+  const remainingProjects = localProjects.filter(p => p.id !== safeProjectId);
+  const nextProject = remainingProjects.find(p => p.id !== safeProjectId) || null;
+  if (nextProject) {
+    setActiveLocalProjectId(nextProject.id);
+    setProject(nextProject.id);
+  } else {
+    setActiveLocalProjectId('default-project');
+    setProject('default-project');
+  }
+  state.currentImageIndex = 0;
+  localImportStatus = `Deleted local project folder: /projects/${safeProjectId}`;
+  console.warn('[local-fs] local project deleted', { projectId: safeProjectId });
   await refresh();
 }
 
@@ -359,5 +388,19 @@ export function bindDatasetsPage(refresh) {
     setProject(id);
     state.currentImageIndex = 0;
     await refresh();
+  }));
+
+  document.querySelectorAll('.delete-local-project').forEach(btn => btn.addEventListener('click', async () => {
+    const id = btn.dataset.projectId;
+    const name = btn.dataset.projectName || id;
+    const imageCount = localProjects.find(p => p.id === id)?.image_count ?? 0;
+    const ok = confirm(`Delete local project "${name}"?\n\nThis will remove folder:\n/projects/${id}\n\nImages in this project: ${imageCount}\n\nThis action deletes local files on this PC workspace and cannot be undone.`);
+    if (!ok) return;
+    try {
+      await deleteProjectFolder(id, refresh);
+    } catch (err) {
+      console.error('[local-fs] delete local project failed', err);
+      alert(err.message || err);
+    }
   }));
 }
