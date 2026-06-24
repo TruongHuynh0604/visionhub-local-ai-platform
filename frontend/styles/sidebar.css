@@ -1,0 +1,45 @@
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 14px 16px;
+  background: #ffffff;
+  border-right: 1px solid var(--line);
+  box-shadow: 12px 0 40px rgba(6,19,65,.04);
+  overflow-y: auto;
+}
+.brand { display:flex; align-items:center; gap: 12px; padding: 4px 2px 16px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.brand-logo { width: 40px; height: 40px; position: relative; flex: 0 0 40px; }
+.brand-logo::before,
+.brand-logo::after,
+.brand-logo span { content:""; position:absolute; border-radius:999px; width:24px; height:24px; }
+.brand-logo::before { background: var(--lime); left: 3px; top: 14px; }
+.brand-logo::after { background: var(--blue-2); right: 2px; top: 2px; }
+.brand-logo span { background: #60a5fa; right: 0; bottom: 2px; opacity:.9; }
+.brand-name { font-size: 18px; line-height: 1; font-weight: 950; letter-spacing: -.04em; }
+.brand-beta { display:block; margin-top: 7px; font-size: 10px; color: var(--blue-2); letter-spacing:.16em; font-weight:950; }
+.nav { display:flex; flex-direction:column; gap: 8px; }
+.nav-item {
+  width: 100%;
+  display:flex;
+  align-items:center;
+  gap: 15px;
+  min-height: 48px;
+  padding: 10px 13px;
+  border-radius: 14px;
+  text-decoration:none;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 900;
+  border: 1px solid transparent;
+  transition: transform .12s ease, background .12s ease, border-color .12s ease;
+}
+.nav-item:hover { background:#f0f7ff; transform: translateX(2px); }
+.nav-item.active { background: var(--blue); color:#fff; border-color:#061341; box-shadow: 0 12px 30px rgba(12,36,124,.25); }
+.nav-icon { width: 28px; height: 28px; display:grid; place-items:center; flex:0 0 28px; }
+.nav-icon svg { width: 23px; height: 23px; stroke-width: 2.45; }
+.nav-item.active .nav-icon svg { stroke: currentColor; }
+.nav-text { white-space: nowrap; }
+.sidebar-footer { margin-top: 20px; padding: 12px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(180deg,#fbfdff,#edf6ff); }
+.sidebar-footer strong { display:block; font-size:13px; }
+.sidebar-footer span { display:block; margin-top:4px; color:var(--muted); font-size:12px; line-height:1.4; }

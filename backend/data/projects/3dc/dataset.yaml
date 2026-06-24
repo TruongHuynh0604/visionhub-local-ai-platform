@@ -1,0 +1,6 @@
+path: C:\Users\truon\Downloads\visionhub_local_ai_platform_v2\visionhub_local_ai_platform_v2\backend\data\projects\3dc\export_detect
+train: images/train
+val: images/val
+names:
+  0: OK
+  1: NG

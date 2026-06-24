@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -e
+cd "$(dirname "$0")"
+if [ ! -d .venv ]; then
+  python3 -m venv .venv
+fi
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r backend/requirements.txt
+export VISIONHUB_DATA_DIR="$PWD/backend/data"
+uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload

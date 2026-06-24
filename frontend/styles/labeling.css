@@ -1,0 +1,19 @@
+.labeling-layout { display:grid; grid-template-columns: 260px minmax(0,1fr) 300px; gap:16px; align-items:stretch; }
+.image-list { max-height: calc(100vh - 210px); overflow:auto; display:flex; flex-direction:column; gap:8px; padding-right:4px; }
+.image-item { display:flex; gap:10px; align-items:center; padding:8px; border:1px solid var(--line); border-radius:14px; background:#fff; text-align:left; }
+.image-item.active { border-color:var(--blue-2); background:#eef6ff; }
+.image-thumb { width:54px; height:42px; object-fit:cover; border-radius:10px; background:#eef2ff; }
+.canvas-wrap { position:relative; min-height: 620px; display:grid; place-items:center; background: radial-gradient(circle at 20% 0%, #eaf5ff, #f8fbff 40%, #eef6ff); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); }
+#labelCanvas { max-width:100%; max-height: calc(100vh - 170px); background:#0b1020; border-radius: 14px; }
+.canvas-help { position:absolute; left:14px; bottom:14px; background:rgba(6,19,65,.86); color:#fff; padding:8px 10px; border-radius:12px; font-size:12px; pointer-events:none; }
+.tool-panel { display:flex; flex-direction:column; gap: 14px; }
+.class-list { display:flex; flex-direction:column; gap:8px; max-height: 300px; overflow:auto; }
+.class-chip { display:flex; align-items:center; justify-content:space-between; gap: 8px; border:1px solid var(--line); background:#fff; padding:9px 10px; border-radius:12px; font-weight:800; }
+.class-chip.active { background:#061341; color:#fff; border-color:#061341; }
+.box-list { display:flex; flex-direction:column; gap:8px; max-height:220px; overflow:auto; }
+.box-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; background:#f7fbff; border:1px solid var(--line); border-radius:12px; font-size:13px; }
+.box-row.active { border-color:var(--blue-2); background:#edf5ff; }
+.mode-banner { padding: 10px 12px; border-radius: 14px; border:1px solid var(--line); background:#fbfdff; color:var(--muted); font-size:13px; line-height:1.45; }
+.mode-banner strong { color:var(--ink); }
+.log-box { min-height: 330px; max-height: 520px; overflow:auto; white-space: pre-wrap; }
+@media (max-width: 1180px) { .labeling-layout { grid-template-columns:1fr; } .canvas-wrap { min-height: 440px; } }

@@ -1,0 +1,25 @@
+{
+  "id": "2e818df890ce",
+  "project_id": "3dc",
+  "task": "detect",
+  "status": "failed",
+  "command": [
+    "C:\\Users\\truon\\Downloads\\visionhub_local_ai_platform_v2\\visionhub_local_ai_platform_v2\\.venv\\Scripts\\python.exe",
+    "-m",
+    "ultralytics",
+    "detect",
+    "train",
+    "data=C:\\Users\\truon\\Downloads\\visionhub_local_ai_platform_v2\\visionhub_local_ai_platform_v2\\backend\\data\\projects\\3dc\\dataset.yaml",
+    "model=yolo11n.pt",
+    "epochs=10",
+    "imgsz=640",
+    "batch=8",
+    "workers=2",
+    "project=C:\\Users\\truon\\Downloads\\visionhub_local_ai_platform_v2\\visionhub_local_ai_platform_v2\\backend\\data\\runs",
+    "name=3dc_2e818df890ce",
+    "exist_ok=True"
+  ],
+  "created_at": "2026-06-24 13:45:44",
+  "log_path": "C:\\Users\\truon\\Downloads\\visionhub_local_ai_platform_v2\\visionhub_local_ai_platform_v2\\backend\\data\\projects\\3dc\\jobs\\2e818df890ce\\train.log",
+  "returncode": 1
+}
