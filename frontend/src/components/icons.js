@@ -9,6 +9,7 @@ export const icons = {
   deploy: `<svg ${attrs}><path d="M12 3 4 8l8 5 8-5-8-5Z"/><path d="M4 16l8 5 8-5"/><path d="M4 12l8 5 8-5"/></svg>`,
   integrations: `<svg ${attrs}><path d="M8 8h8v8H8z"/><path d="M12 2v6M12 16v6M2 12h6M16 12h6"/><path d="M5 5l3 3M19 5l-3 3M5 19l3-3M19 19l-3-3"/></svg>`,
   support: `<svg ${attrs}><path d="M9 9a3 3 0 1 1 5 2.2c-1.2.8-2 1.4-2 2.8"/><path d="M12 18h.01"/><circle cx="12" cy="12" r="9"/></svg>`,
+  debug: `<svg ${attrs}><path d="M4 5h16v11H4z"/><path d="M8 20h8"/><path d="M10 16v4M14 16v4"/><path d="m8 9 2 2-2 2"/><path d="M12 13h4"/></svg>`,
   trash: `<svg ${attrs}><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>`,
   plus: `<svg ${attrs}><path d="M12 5v14M5 12h14"/></svg>`,
   play: `<svg ${attrs}><path d="M8 5v14l11-7-11-7Z"/></svg>`,
