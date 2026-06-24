@@ -24,7 +24,7 @@ export async function LabelingPage() {
   } else {
     const projects = await api.get('/api/projects');
     state.projects = projects.projects;
-    if (!state.selectedProjectId && state.projects[0]) setProject(state.projects[0].id);
+    if (!state.selectedProjectId || state.selectedProjectId === LOCAL_PROJECT_ID) setProject(state.projects[0]?.id || '');
     await loadServerProjectData();
   }
 
@@ -134,7 +134,7 @@ function imageListHtml() {
 export function bindLabelingPage(refresh) {
   document.getElementById('switchServerModeBtn')?.addEventListener('click', async () => {
     setStorageMode('server');
-    if (state.projects[0] && state.selectedProjectId === LOCAL_PROJECT_ID) setProject(state.projects[0].id);
+    if (state.selectedProjectId === LOCAL_PROJECT_ID) setProject(state.projects[0]?.id || '');
     state.currentImageIndex = 0;
     await refresh();
   });
@@ -236,6 +236,6 @@ function renderSidePanels() {
     classPanel.innerHTML = '<div class="mode-banner">Image-level selector is active. Detection tools are disabled.</div>';
     boxList.innerHTML = '<div class="empty">No detection boxes in classification mode.</div>';
     clsPanel.innerHTML = `<div class="class-list">${state.classes.map((name, i) => `<button class="class-chip ${clsValue === i ? 'active' : ''}" data-cls-id="${i}">${i}. ${name}<span>${clsValue === i ? 'Selected' : ''}</span></button>`).join('')}</div>`;
-    setTimeout(() => document.querySelectorAll('[data-cls-id]').forEach(btn => btn.addEventListener('click', async () => { clsValue = Number(btn.dataset.clsId); renderSidePanels(); await saveClassificationValue(); })), 0);
+    setTimeout(() => document.querySelectorAll('[data-cls-id]').forEach(btn => btn.addEventListener('click', async () => { clsValue = Number(btn.datasetClsId || btn.dataset.clsId); renderSidePanels(); await saveClassificationValue(); })), 0);
   }
 }
