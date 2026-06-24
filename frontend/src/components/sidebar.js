@@ -9,6 +9,7 @@ const nav = [
   ['deploy', 'Deploy', icons.deploy],
   ['integrations', 'Integrations', icons.integrations],
   ['support', 'Support', icons.support],
+  ['debug', 'Logs', icons.debug],
   ['trash', 'Trash', icons.trash],
 ];
 
