@@ -1,12 +1,12 @@
 export const state = {
   route: location.hash.replace('#/', '') || 'home',
   projects: [],
-  selectedProjectId: localStorage.getItem('vh_project_id') || '',
+  selectedProjectId: 'local-fs',
   classes: [],
   images: [],
   currentImageIndex: 0,
   currentTask: localStorage.getItem('vh_task') || 'Detection',
-  storageMode: localStorage.getItem('vh_storage_mode') || 'server',
+  storageMode: 'local',
   localRootHandle: null,
   localRootName: localStorage.getItem('vh_local_root_name') || '',
   localFsReady: false,
@@ -19,8 +19,8 @@ export function setRoute(route) {
 }
 
 export function setProject(projectId) {
-  state.selectedProjectId = projectId;
-  localStorage.setItem('vh_project_id', projectId || '');
+  state.selectedProjectId = projectId || 'local-fs';
+  localStorage.setItem('vh_project_id', state.selectedProjectId);
 }
 
 export function setTask(task) {
@@ -28,7 +28,7 @@ export function setTask(task) {
   localStorage.setItem('vh_task', task);
 }
 
-export function setStorageMode(mode) {
-  state.storageMode = mode || 'server';
-  localStorage.setItem('vh_storage_mode', state.storageMode);
+export function setStorageMode() {
+  state.storageMode = 'local';
+  localStorage.setItem('vh_storage_mode', 'local');
 }
