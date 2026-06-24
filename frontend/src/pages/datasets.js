@@ -1,4 +1,3 @@
-import { api } from '../api.js';
 import { state, setProject, setStorageMode } from '../state.js';
 import { Topbar } from '../components/topbar.js';
 import {
@@ -17,15 +16,15 @@ let localStatus = '';
 let localStructure = null;
 
 export async function DatasetsPage() {
-  const data = await api.get('/api/projects');
-  state.projects = data.projects;
+  setStorageMode('local');
+  setProject(LOCAL_PROJECT_ID);
   await loadLocalInfo(false);
   return `
-    ${Topbar('Datasets', 'Create projects, use server storage, or connect a local PC folder for browser labeling.')}
+    ${Topbar('Datasets', 'Local-only dataset workspace. Images and labels stay on your PC folder; Render/GitHub stores source code only.')}
     <div class="grid two">
       <section class="card pad stack">
         <h2>Local PC folder</h2>
-        <p class="muted">Recommended for large datasets. Images and labels stay on your PC drive. The web only gets browser permission to the folder you select.</p>
+        <p class="muted">Recommended for YOLO datasets. Select one folder on your PC. VisionHub will create missing subfolders and save labels directly to that folder through the browser File System Access API.</p>
         ${localCapabilityHtml()}
         <div class="row">
           <button id="chooseLocalFolderBtn" class="btn primary">Select / create local data folder</button>
@@ -39,30 +38,13 @@ export async function DatasetsPage() {
 
       <section class="card pad stack">
         <h2>Required local structure</h2>
-        <p class="muted">After selecting a folder, VisionHub automatically checks and creates missing child folders/files.</p>
+        <p class="muted">After selecting a folder, VisionHub checks and creates missing folders/files automatically.</p>
         ${requiredStructureHtml()}
       </section>
     </div>
 
-    <div class="grid two" style="margin-top:16px">
-      <section class="card pad stack">
-        <h2>Create server project</h2>
-        <input id="newProjectName" class="input" placeholder="Project name, e.g. Camera6 Top Inspection" />
-        <textarea id="newClasses" rows="7" placeholder="One class per line" class="input">OK\nNG</textarea>
-        <select id="newTask" class="select"><option>Detection</option><option>Classification</option></select>
-        <button id="createProjectBtn" class="btn primary">Create server project</button>
-      </section>
-      <section class="card pad stack">
-        <h2>Upload images to server</h2>
-        ${projectSelectHtml()}
-        <input id="imageFiles" class="input" type="file" multiple accept="image/*" />
-        <button id="uploadBtn" class="btn primary">Upload selected images</button>
-        <div id="uploadStatus" class="muted"></div>
-      </section>
-    </div>
-
     <section class="card pad" style="margin-top:16px">
-      <h2>Projects</h2>
+      <h2>Local project</h2>
       ${projectsTable()}
     </section>
   `;
@@ -75,20 +57,28 @@ function escapeHtml(value) {
 async function loadLocalInfo(requestPermission = false) {
   localSummary = null;
   localStructure = null;
+  state.projects = [];
+  setStorageMode('local');
+  setProject(LOCAL_PROJECT_ID);
+
   if (!isFileSystemAccessSupported()) {
     localStatus = 'File System Access API is not available. Use Chrome or Edge over HTTPS.';
     return;
   }
+
   try {
     const result = await reconnectLocalRootFolder({ requestPermission });
     if (!result) {
       localStatus = 'No saved local folder. Click Select / create local data folder.';
+      state.localFsReady = false;
       return;
     }
     if (result.permission !== 'granted') {
       localStatus = `Saved folder found, but permission is ${result.permission}. Click Reconnect and allow read/write permission.`;
+      state.localFsReady = false;
       return;
     }
+
     state.localRootHandle = result.handle;
     state.localRootName = result.handle.name;
     state.localFsReady = true;
@@ -102,9 +92,11 @@ async function loadLocalInfo(requestPermission = false) {
       `Folders created now: ${result.structure.created.length ? result.structure.created.join(', ') : 'none'}`,
       `Files created now: ${result.structure.filesCreated.length ? result.structure.filesCreated.join(', ') : 'none'}`,
       'Put images into /images. Detection labels are saved into /labels/detection as YOLO .txt files.',
+      'No images, labels, exports, logs or training data are uploaded to the server.',
     ].join('\n');
   } catch (err) {
     localStatus = `Local folder check failed: ${err.message || err}`;
+    state.localFsReady = false;
     console.error('[local-fs] dataset page load failed', err);
   }
 }
@@ -113,8 +105,7 @@ function localCapabilityHtml() {
   if (!isFileSystemAccessSupported()) {
     return `<div class="empty">This browser does not support local folder read/write. Use Chrome or Edge.</div>`;
   }
-  const badge = state.storageMode === 'local' ? 'ACTIVE: Local PC storage' : 'Current: Server storage';
-  return `<div class="mode-banner"><strong>${badge}</strong><br>Folder: ${escapeHtml(state.localRootName || 'not selected')}</div>`;
+  return `<div class="mode-banner"><strong>ACTIVE: Local PC storage only</strong><br>Folder: ${escapeHtml(state.localRootName || 'not selected')}<br><span class="muted">Server upload/project creation is disabled to avoid filling Render/GitHub storage.</span></div>`;
 }
 
 function requiredStructureHtml() {
@@ -141,32 +132,17 @@ function localClassesEditorHtml() {
     </div>`;
 }
 
-function projectSelectHtml() {
-  return `<select id="projectSelect" class="select"><option value="">Select server project</option>${state.projects.map(p => `<option value="${p.id}" ${p.id === state.selectedProjectId ? 'selected' : ''}>${p.name} (${p.image_count})</option>`).join('')}</select>`;
-}
-
 function projectsTable() {
-  const rows = [];
-  if (localSummary) {
-    rows.push(`
-      <tr>
-        <td><b>${localSummary.name}</b><br><span class="muted">${LOCAL_PROJECT_ID}</span></td>
-        <td><span class="badge">${state.currentTask}</span></td>
-        <td>${localSummary.image_count}</td>
-        <td>${localSummary.classes.join(', ')}</td>
-        <td><button class="btn small use-local-project">Use local</button> <a class="btn small" href="#/labeling">Label</a></td>
-      </tr>`);
-  }
-  rows.push(...state.projects.map(p => `
+  if (!localSummary) return `<div class="empty">No local project connected yet. Select a local PC folder first.</div>`;
+  return `<table class="table"><thead><tr><th>Name</th><th>Task</th><th>Images</th><th>Classes</th><th>Action</th></tr></thead><tbody>
     <tr>
-      <td><b>${p.name}</b><br><span class="muted">${p.id}</span></td>
-      <td><span class="badge">${p.task_type}</span></td>
-      <td>${p.image_count}</td>
-      <td>${p.classes.join(', ')}</td>
-      <td><button class="btn small select-project" data-id="${p.id}">Use server</button> <a class="btn small" href="#/labeling" data-labeling="${p.id}">Label</a></td>
-    </tr>`));
-  if (!rows.length) return `<div class="empty">No project yet. Create a server dataset or select a local PC folder.</div>`;
-  return `<table class="table"><thead><tr><th>Name</th><th>Task</th><th>Images</th><th>Classes</th><th>Action</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+      <td><b>${escapeHtml(localSummary.name)}</b><br><span class="muted">${LOCAL_PROJECT_ID}</span></td>
+      <td><span class="badge">${escapeHtml(state.currentTask)}</span></td>
+      <td>${localSummary.image_count}</td>
+      <td>${localSummary.classes.map(escapeHtml).join(', ')}</td>
+      <td><button class="btn small use-local-project">Use local</button> <a class="btn small" href="#/labeling">Label</a></td>
+    </tr>
+  </tbody></table>`;
 }
 
 export function bindDatasetsPage(refresh) {
@@ -205,8 +181,8 @@ export function bindDatasetsPage(refresh) {
     state.localRootHandle = null;
     state.localRootName = '';
     state.localFsReady = false;
-    setStorageMode('server');
-    setProject('');
+    setStorageMode('local');
+    setProject(LOCAL_PROJECT_ID);
     await refresh();
   });
 
@@ -223,31 +199,4 @@ export function bindDatasetsPage(refresh) {
     setProject(LOCAL_PROJECT_ID);
     await refresh();
   }));
-
-  document.getElementById('createProjectBtn')?.addEventListener('click', async () => {
-    const name = document.getElementById('newProjectName').value.trim();
-    const classes = document.getElementById('newClasses').value.split('\n').map(x => x.trim()).filter(Boolean);
-    const task_type = document.getElementById('newTask').value;
-    if (!name) return alert('Enter project name');
-    const project = await api.post('/api/projects', { name, classes, task_type });
-    setStorageMode('server');
-    setProject(project.id);
-    await refresh();
-  });
-
-  document.getElementById('projectSelect')?.addEventListener('change', e => { setStorageMode('server'); setProject(e.target.value); });
-  document.querySelectorAll('.select-project').forEach(btn => btn.addEventListener('click', async () => { setStorageMode('server'); setProject(btn.dataset.id); await refresh(); }));
-
-  document.getElementById('uploadBtn')?.addEventListener('click', async () => {
-    const projectId = document.getElementById('projectSelect').value || state.selectedProjectId;
-    const files = [...document.getElementById('imageFiles').files];
-    if (!projectId || projectId === LOCAL_PROJECT_ID) return alert('Select a server project first');
-    if (!files.length) return alert('Select images');
-    const fd = new FormData();
-    files.forEach(f => fd.append('files', f));
-    document.getElementById('uploadStatus').textContent = 'Uploading...';
-    const res = await api.post(`/api/projects/${projectId}/images`, fd);
-    document.getElementById('uploadStatus').textContent = `Uploaded ${res.saved.length} images.`;
-    await refresh();
-  });
 }
